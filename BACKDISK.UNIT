@@ -1,0 +1,354 @@
+{$ keep 'obj/Backdisk' }
+Unit Backdisk;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata;
+
+Procedure FormatEraseDisk;
+
+implementation
+
+Procedure RefreshFEDialog;
+var
+    DestRectPtr : ^Rect;
+    DestRect    : Rect;
+begin
+    MoveTo(10,12);
+    DrawString(@'Select device for operation');
+ 
+    MoveTo(75,83);
+    DrawString(@'Volume name :');
+ 
+    DrawControls(currentPort);
+end;
+
+Procedure FormatEraseDisk;
+{ This procedure will allow the user to format or erase any block device in }
+{ the system.                                                               }
+const
+    DialogHeight        = 108;
+    DialogWidth         = 480;
+ 
+    OkItem              = 1;
+    CancelItem          = 2;
+    EraseDiskItem       = 3;
+    FormatDiskItem      = 4;
+    VolumeNameItem      = 5;
+    DeviceListItem      = 6;
+    NullItem            = 7;
+var
+    FEPort              : grafPortPtr;
+ 
+    NewControl2Junk     : ctlRecHndl;
+    itemHit             : longint;
+    NumOfClicks         : integer;
+ 
+    DialogRect          : rect;
+    TmpRect             : rect;
+    DestRect            : rect;
+ 
+    ctlList             : array [1..NullItem] of ptr;
+ 
+    deviceList          : devMemberList;
+    SelectedMem         : integer;
+    devListSize         : integer;
+    memberNumber        : integer;
+ 
+    DeviceName          : GSOSInString;
+    VolumeNameRequested : GSOSInString;
+    VolumeName          : GSOSOutString;
+ 
+    TmpString           : pString;
+    AlertString         : textBlock;
+    Junk                : Integer;
+    FormatEraseParms    : formatOSDCB;
+ 
+    Procedure SetVolumeName;
+    var
+        DeviceNum           : Integer;
+        VolumeParms         : volumeOSDCB;
+        DeviceName          : GSOSInString;
+        VolumeName          : GSOSOutString;
+        TmpString           : pString;
+    begin
+        SelectedMem := EZNextMember(0, DeviceListItem);
+        DeviceNum := ord(deviceList[SelectedMem].memDevice);
+        DeviceName.theString := copy(deviceList[SelectedMem].memPtr^,
+                                 1,
+                                 length(deviceList[SelectedMem].memPtr^));
+        DeviceName.size := length(deviceList[SelectedMem].memPtr^);
+ 
+        VolumeName.maxSize := GSOSNameLength + 4;
+        VolumeName.theString.size := 0;
+        VolumeName.theString.theString := '';
+ 
+        With VolumeParms do
+        begin
+            pcount := 2;
+            devName := @DeviceName;
+            volName := @VolumeName;
+        end;
+ 
+        VolumeGS(VolumeParms);
+ 
+        If ToolError = 0
+        then
+            begin
+                With VolumeName do
+                    TmpString := copy(theString.theString, 1, theString.size);
+
+                SetRadioButton(On, FormatDiskItem);
+                Activate(EraseDiskItem);
+            end
+        else
+            begin
+                TmpString := '';
+                Deactivate(EraseDiskItem);
+            end;
+ 
+        SetlineEditText(TmpString, False, VolumeNameItem);
+    end;
+
+begin
+    UserAbort := False;
+ 
+    With DialogRect do
+    begin
+        h1 := (640 - DialogWidth) div 2;
+        v1 := (200 - DialogHeight) div 2;
+        h2 := h1 + DialogWidth;
+        v2 := v1 + DialogHeight;
+    end;
+ 
+    FEPort := startupEZDialog(DialogRect,
+                              @RefreshFEDialog);
+    currentPort := FEPort;
+ 
+    SetPort(FEPort);
+ 
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 90;
+        h2 := 90;
+        v2 := 104;
+    end;
+ 
+    ctlList[OkItem] := newButtonTemplate(OkItem,
+                                         TmpRect,
+                                         0,
+                                         0,
+                                         0,
+                                         @'Ok',
+                                         Nil,
+                                         Nil);
+ 
+    with TmpRect do
+    begin
+        h1 := DialogWidth - 90;
+        v1 := 90;
+        h2 := DialogWidth - 10;
+        v2 := 104;
+    end;
+ 
+    ctlList[CancelItem] := newButtonTemplate(CancelItem,
+                                             TmpRect,
+                                             1,
+                                             0,
+                                             0,
+                                             @'Cancel',
+                                             Nil,
+                                             Nil);
+ 
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 32;
+        h2 := 130;
+        v2 := 41;
+    end;
+ 
+    ctlList[EraseDiskItem] := newRadioButtonTemplate(EraseDiskItem,
+                                                     TmpRect,
+                                                     1,
+                                                     0,
+                                                     0,
+                                                     @'Erase Volume.',
+                                                     ord(True),
+                                                     Nil,
+                                                     Nil);
+ 
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 42;
+        h2 := 165;
+        v2 := 51;
+    end;
+ 
+    ctlList[FormatDiskItem] := newRadioButtonTemplate(FormatDiskItem,
+                                                      TmpRect,
+                                                      1,
+                                                      0,
+                                                      0,
+                                                      @'Initialise Volume.',
+                                                      ord(False),
+                                                      Nil,
+                                                      Nil);
+ 
+    with DestRect do
+    begin
+        h1 := 180;
+        v1 := 75;
+        h2 := DialogWidth - 6;
+        v2 := v1 + lineEditHeight;
+    end;
+ 
+    ctlList[VolumeNameItem] := newlineEditTemplate(VolumeNameItem,
+                                                   DestRect,
+                                                   0,
+                                                   0,
+                                                   0,
+                                                   32,
+                                                   @'');
+ 
+    with TmpRect do
+    begin
+        v1 := 21;
+        h1 := DestRect.h1;
+        v2 := 72;
+        h2 := DialogWidth - 30;
+    end;
+ 
+    For memberNumber := 1 to 100 do
+        deviceList[memberNumber].memPtr := Nil;
+
+    { Sets list size for DeviceListItem }
+    devListSize := EZGetDeviceList(@deviceList,
+                                   ord4(ord4(dcmRAMROMDiskMask) |
+                                        ord4(dcmBlockDevice)),
+                                   ord4(dcmBlockDevice));
+ 
+    ctlList[DeviceListItem] := newListTemplate(DeviceListItem,
+                                               TmpRect,
+                                               0,
+                                               0,
+                                               0,
+                                               devListSize,
+                                               5,
+                                               2,
+                                               1,
+                                               @EZDrawMember,
+                                               10,
+                                               13,
+                                               @deviceList,
+                                               Nil);
+ 
+    ctlList[NullItem] := Nil;
+ 
+    If not UserAbort then
+    begin
+        NewControl2Junk := NewControl2(FEPort,
+                                    3,
+                                    @ctlList[1]);
+ 
+        MakeThisCtlTarget(GetCtlHandleFromID(FEPort, VolumeNameItem));
+ 
+        EZSelectMember(1, DeviceListItem);
+ 
+        RefreshFEDialog;
+ 
+        SetVolumeName;
+    end;
+  
+    While Not UserAbort do
+    begin
+        itemHit := 0;
+ 
+        Repeat
+            itemHit := EZDialogEvent(NumOfClicks);
+ 
+            If itemHit = CancelItem then
+                UserAbort := True;
+ 
+            If SelectedMem <> EZNextMember(0, DeviceListItem) then
+                SetVolumeName;
+ 
+        Until (itemHit = OkItem) or
+              (UserAbort);
+ 
+        If itemHit = OkItem then
+        begin
+            SelectedMem := EZNextMember(0,DeviceListItem);
+            DeviceName.theString := copy(deviceList[SelectedMem].memPtr^,
+                                    1,
+                                    length(deviceList[SelectedMem].memPtr^));
+            DeviceName.size := length(deviceList[SelectedMem].memPtr^);
+ 
+            GetlineEditText(VolumeNameItem, TmpString);
+ 
+            If length(TmpString) > 0
+            then
+                begin
+                    VolumeName.maxSize := GSOSNameLength + 4;
+ 
+                    VolumeNameRequested.theString := copy(TmpString,1,
+                                            length(TmpString));
+                    VolumeNameRequested.size := length(TmpString);
+ 
+                    If not ValidatePathName(VolumeNameRequested,
+                                            VolumeName,
+                                            False)
+                    then
+                        begin
+                            AlertString := concat('22:',
+                                                  'That volume name is ',
+                                                  'invalid. Please try ',
+                                                  'another.:^#0');
+                            Junk := AlertWindow(0,Nil,@AlertString);
+                        end
+                    else
+                        begin
+                            With FormatEraseParms do
+                            begin
+                                pcount := 3;
+                                devName := @DeviceName;
+                                volName := @VolumeName.theString.size;
+                            end;
+ 
+                            If RadioButtonOn(EraseDiskItem)
+                            then
+                                EraseDiskGS(FormatEraseParms)
+                            else
+                                FormatGS(FormatEraseParms);
+                         end;
+                end
+            else
+                begin
+                    AlertString := concat('22:',
+                                          'That volume name is ',
+                                          'invalid. Please try ',
+                                          'another.:^#0');
+                    Junk := AlertWindow($0001,Nil,@AlertString);
+                end;
+        end;
+    end;
+ 
+    For memberNumber := 1 to 100 do
+        If deviceList[memberNumber].memPtr <> Nil then
+            dispose(deviceList[memberNumber].memPtr);
+
+    CloseWindow(FEPort);
+end;
+
+end.

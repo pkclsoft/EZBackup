@@ -1,0 +1,236 @@
+obj/backasm.a
+    backasm.unit
+    obj/backcopy.a
+        { compile backasm.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backcopy.a
+    backcopy.asm
+        { compile backcopy.asm keep=obj/$ }
+
+obj/backback.a
+    backback.unit
+    obj/backdata.a
+    obj/backmisc.a
+    obj/backlow.a
+    obj/backlist.a
+    obj/backedit.a
+    obj/backsave.a
+    obj/backwrite.a
+        { compile backback.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backbad.a
+    backbad.unit
+    obj/backdata.a
+    obj/backmisc.a
+        { compile backbad.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backbufr.a
+    backbufr.unit
+    obj/backdata.a
+    obj/backmisc.a
+    obj/backasm.a
+    obj/backlow.a
+        { compile backbufr.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backcat.a
+    backcat.unit
+    obj/backdata.a
+    obj/backmisc.a
+    obj/backlow.a
+    obj/backsave.a
+    obj/backread.a
+    obj/backedit.a
+        { compile backcat.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backdata.a
+    backdata.unit
+        { compile backdata.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backdisk.a
+    backdisk.unit
+    obj/backdata.a
+        { compile backdisk.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backedit.a
+    backedit.unit
+    obj/backdata.a
+    obj/backmisc.a
+    obj/backlist.a
+        { compile backedit.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backevent.a
+    backevent.unit
+    obj/backdata.a
+    obj/backmenu.a
+        { compile backevent.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backinit.a
+    backinit.unit
+    obj/backdata.a
+    obj/backmisc.a
+        { compile backinit.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backlist.a
+    backlist.unit
+    obj/backdata.a
+    obj/backmisc.a
+        { compile backlist.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backlow.a
+    backlow.unit
+    obj/backdata.a
+    obj/backmisc.a
+        { compile backlow.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backmenu.a
+    backmenu.unit
+    obj/backdata.a
+    obj/backmisc.a
+    obj/backback.a
+    obj/backlist.a
+    obj/backrest.a
+    obj/backlow.a
+    obj/backcat.a
+    obj/backpref.a
+    obj/backbad.a
+    obj/backdisk.a
+        { compile backmenu.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backmisc.a
+    backmisc.unit
+    obj/backdata.a
+        { compile backmisc.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backpref.a
+    backpref.unit
+    obj/backdata.a
+    obj/backmisc.a
+        { compile backpref.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backread.a
+    backread.unit
+    obj/backdata.a
+    obj/backasm.a
+    obj/backmisc.a
+    obj/backlow.a
+    obj/backbufr.a
+    obj/backlist.a
+        { compile backread.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backrest.a
+    backrest.unit
+    obj/backdata.a
+    obj/backmisc.a
+    obj/backbufr.a
+    obj/backlow.a
+    obj/backread.a
+    obj/backsave.a
+    obj/backedit.a
+        { compile backrest.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backsave.a
+    backsave.unit
+    obj/backdata.a
+        { compile backsave.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backwrite.a
+    backwrite.unit
+    obj/backdata.a
+    obj/backmisc.a
+    obj/backlow.a
+    obj/backbufr.a
+    obj/backlist.a
+        { compile backwrite.unit keep=obj/$
+          move -c obj/=.int intf }
+
+obj/backup.a
+    backup.pas
+    obj/backdata.a
+    obj/backinit.a
+    obj/backevent.a
+        { compile backup.pas keep=obj/$ }
+
+obj/backuplib
+	obj/backevent.a
+	obj/backpref.a
+	obj/backasm.a
+	obj/backback.a
+	obj/backbad.a
+	obj/backbufr.a
+	obj/backcat.a
+	obj/backdata.a
+	obj/backdisk.a
+	obj/backedit.a
+	obj/backinit.a
+	obj/backlist.a
+	obj/backlow.a
+	obj/backmenu.a
+	obj/backmisc.a
+	obj/backread.a
+	obj/backrest.a
+	obj/backsave.a
+	obj/backup.a
+	obj/backwrite.a
+	obj/backcopy.a
+	{
+		delete obj/backuplib
+		makelib obj/backuplib +obj/backevent.a
+		makelib obj/backuplib +obj/backpref.a
+		makelib obj/backuplib +obj/backasm.a
+		makelib obj/backuplib +obj/backback.a
+		6/purge
+		makelib obj/backuplib +obj/backbad.a
+		makelib obj/backuplib +obj/backbufr.a
+		makelib obj/backuplib +obj/backcat.a
+		6/purge
+		makelib obj/backuplib +obj/backdata.a
+		makelib obj/backuplib +obj/backdisk.a
+		makelib obj/backuplib +obj/backedit.a
+		makelib obj/backuplib +obj/backinit.a
+		6/purge
+		makelib obj/backuplib +obj/backlist.a
+		makelib obj/backuplib +obj/backlow.a
+		makelib obj/backuplib +obj/backmenu.a
+		makelib obj/backuplib +obj/backmisc.a
+		6/purge
+		makelib obj/backuplib +obj/backread.a
+		makelib obj/backuplib +obj/backrest.a
+		makelib obj/backuplib +obj/backsave.a
+		6/purge
+		makelib obj/backuplib +obj/backwrite.a
+		makelib obj/backuplib +obj/backcopy.root
+		makelib obj/backuplib +obj/backcopy.a
+		6/purge
+	}
+	
+obj/ezbackup
+    obj/backup.a
+    obj/backuplib
+        { link obj/backup obj/backuplib 13/ezlib 13/paslib 13/syslib keep=obj/ezbackup
+          delete ez.backup }
+
+ez.backup
+    obj/ezbackup
+    backres.rez
+    13/EZLibDefs/ezresource.rez
+        { copy -c obj/ezbackup ez.backup
+          compile backres.rez keep=ez.backup rez=(-i 2/rinclude -t $b3)
+          compile 13/EZLibDefs/ezresource.rez keep=ez.backup rez=(-i 2/rinclude -a) }

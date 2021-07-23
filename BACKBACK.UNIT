@@ -1,0 +1,717 @@
+{$ keep 'obj/Backback' }
+Unit Backback;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/EZLibDefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata, BackMisc, Backlow, Backlist, Backedit, Backsave, Backwrite;
+
+Function BackupParametersSet : Boolean;
+
+Function StartBackup : Boolean;
+
+implementation
+
+var
+    CBPort              :   grafPortPtr;
+    CBPercent           :   real;
+
+Procedure RefreshBackupParms;
+begin
+    SetForeColor(0);
+    SetBackColor(3);
+ 
+    MoveTo(11,18);
+    DrawString(@'Backup which volume');
+
+    MoveTo(360,18);
+    DrawString(@'... to which location');
+
+    DrawControls(currentPort);
+end;
+
+Function BackupParametersSet;
+const
+    OkItem              = 1;
+    CancelItem          = 2;
+    IncrementalItem     = 3;
+    SelectFilesItem     = 4;
+    volumeListItem      = 5;
+    deviceListItem      = 6;
+    reScanItem          = 7;
+    NullItem            = 8;
+
+var
+    BPPort              : grafPortPtr;
+
+    itemHit             : longint;
+    NumOfClicks         : integer;
+
+    TmpRect             : rect;
+    TextRect            : rect;
+
+    ctlList             : array [1..NullItem] of ptr;
+
+    NewControl2Junk     : ctlRecHndl;
+    ValidJunk           : Boolean;
+
+    currentVolume       : GSOSOutString;
+    currentMember       : integer;
+
+    volumeChanged       : boolean;
+
+    volumeList          : devMemberList;
+    numOfVolumes        : integer;
+    deviceList          : devMemberList;
+    numOfDevices        : integer;
+
+    Msg                 : packed array [1..150] of char;
+    Junk                : Integer;
+
+    Procedure SetVolumeName;
+    var
+        DeviceNum           : Integer;
+        VolumeParms         : volumeOSDCB;
+        DeviceName          : GSOSInString;
+        VolumeName          : GSOSOutString;
+        SelectedMember      : integer;
+    begin
+        SelectedMember := EZNextMember(0, volumeListItem);
+
+        If SelectedMember <> CurrentMember then
+        begin
+            DeviceNum := ord(volumeList[SelectedMember].memDevice);
+
+            with backupHeader do 
+            begin
+                SourceDeviceIcon := volumeList[SelectedMember].memValue;
+                NumOfFiles := 0;
+            end;
+
+            with currentVolume, volumeList[SelectedMember] do
+            begin
+                theString.theString := copy(memPtr^, 1, length(memPtr^));
+                theString.size := length(memPtr^);
+            end;
+
+            volumeChanged := True;
+            CurrentMember := SelectedMember;
+        end;
+    end;
+
+    Procedure SelectOutputDevice;
+    var
+        DeviceName      :   GSOSOutString;
+        Count           :   Integer;
+        SelectedMember  :   Integer;
+    begin
+        SelectedMember := EZNextMember(0,deviceListItem);
+
+        If SelectedMember = 0
+        then
+            itemHit := 0
+        else
+            with deviceList[SelectedMember], SavesetLocation do
+            begin
+                deviceType := ord(memDevice);
+
+                If (deviceType <> -1) then
+                begin
+                    If (deviceType <> AppletalkFileServer) then
+                        deviceNum := 0
+                    else
+                        deviceNum := EZNextDevice(0, ord(memDevice));
+
+                    Device.maxSize := GSOSNameLength + 4;
+ 
+                    With DeviceDescr do
+                    begin
+                        pcount := 8;
+                        devNum := EZNextDevice(0, ord(memDevice));
+                        devName := @Device;
+                    end;
+ 
+                    DInfoGS(DeviceDescr);
+                end;
+ 
+                case ord(memDevice) of
+                    -1                  :   DestType := 1;
+                    AppletalkFileServer :   If not SetupFileServer(ord(memDevice))
+                                            then
+                                                itemHit := 0;
+                    otherwise           :   DestType := 0;
+                end;
+
+                If (DestType = 0) and (itemHit <> 0) then
+                begin
+                    Count := ord(DeviceDescr.totalBlocks div 4096);
+                    If (Count * 4096) < DeviceDescr.totalBlocks then
+                        Count := Count + 1;
+                    FirstBlock := Count + 6;
+ 
+                    UsedBlocks := ord(ord4(DeviceDescr.totalBlocks) -
+                                          ord4(FirstBlock));
+                end;
+            end;                
+    end;
+
+    Procedure HandleFileSelection(selectFiles : Integer);
+    var
+        gotList : boolean;
+    begin
+        SelectOutputDevice;
+
+        If itemHit <> 0 then
+        begin
+            With BackupHeader do
+            begin
+                If volumeChanged then
+                    DeleteFileList;
+
+                If FileList = Nil then
+                begin
+                    BackupType := CheckBoxOn(IncrementalItem);
+                    RootDirName := currentVolume.theString;
+
+                    gotList := not GetFileList(BackupType, selectFiles);
+                    volumeChanged := False;
+                end;
+
+                If (FileList <> Nil) and not UserAbort then
+                    EditFileList(0);
+            end;
+
+            SetPort(currentPort);
+        end;
+    end;
+
+    Procedure CheckIfOkToStart;
+    var
+        Msg     : packed array [1..150] of char;
+        Junk    : Integer;
+    begin
+        If (BackupHeader.NumOfFiles = 0)
+        then
+            begin
+                Msg := concat('62:You must select at least one file/folder ',
+                              'before the backup can commence.:^#6:#1');
+
+                If AlertWindow(0,Nil,@Msg) = 0 then
+                    HandleFileSelection(included);
+
+                itemHit := 0;
+            end
+        else
+            SelectOutputDevice;
+    end;
+
+    Procedure reScanVolumes;
+    begin
+        numOfVolumes := EZGetVolumeList(@volumeList,
+                                        ord4(dcmBlockDevice),
+                                        ord4(dcmBlockDevice));
+
+        EZNewList(@EZDrawMember,
+                  1,
+                  pointer(@volumeList),
+                  numOfVolumes,
+                  1,
+                  volumeListItem);
+
+        InvalCtls(BPPort);
+    end;
+
+begin
+    with BackupHeader do
+    begin
+        BackupType := False;
+        RootDirName.size := 1;
+        RootDirName.theString := '*';
+
+        ValidJunk := ValidatePathName(RootDirName, currentVolume, False);
+ 
+        RootDirName := currentVolume.theString;
+
+        NumOfFiles := 0;
+    end;
+
+    With TmpRect do
+    begin
+        h1 := 15;
+        v1 := 28;
+        h2 := 624;
+        v2 := 155;
+    end;
+
+    BPPort := startupEZDialog(TmpRect,
+                              @RefreshBackupParms);
+    currentPort := BPPort;
+    SetPort(BPPort);
+
+    with TmpRect do
+    begin
+        h1 := 260;
+        v1 := 39;
+        h2 := 350;
+        v2 := 50;
+    end;
+
+    ctlList[reScanItem] := newButtonTemplate(reScanItem,
+                                             TmpRect,
+                                             0,
+                                             0,
+                                             0,
+                                             @'Re-scan',
+                                             Nil,
+                                             Nil);
+
+    with TmpRect do
+    begin
+        h1 := 260;
+        v1 := 59;
+        h2 := 350;
+        v2 := 70;
+    end;
+
+    ctlList[OkItem] := newButtonTemplate(OkItem,
+                                         TmpRect,
+                                         1,
+                                         0,
+                                         0,
+                                         @'Backup',
+                                         Nil,
+                                         Nil);
+ 
+    with TmpRect do
+    begin
+        h1 := 260;
+        v1 := 79;
+        h2 := 350;
+        v2 := 90;
+    end;
+ 
+    ctlList[CancelItem] := newButtonTemplate(CancelItem,
+                                             TmpRect,
+                                             0,
+                                             0,
+                                             0,
+                                             @'Cancel',
+                                             Nil,
+                                             Nil);
+
+    with TmpRect do
+    begin
+        h1 := 360;
+        v1 := 112;
+        h2 := 599;
+        v2 := 124;
+    end;
+ 
+    ctlList[SelectFilesItem] := newButtonTemplate(SelectFilesItem,
+                                                  TmpRect,
+                                                  3,
+                                                  0,
+                                                  0,
+                                                  @'Select Files',
+                                                  Nil,
+                                                  Nil);
+
+    with TmpRect do
+    begin
+        h1 := 11;
+        v1 := 112;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[IncrementalItem] := newCheckBoxTemplate(IncrementalItem,
+                                                    TmpRect,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    @'Changed files only',
+                                                    ord(BackupHeader.BackupType),
+                                                    Nil,
+                                                    Nil);
+
+    currentVolume.maxSize := GSOSNameLength + 4;
+ 
+    CurrentMember := 1;
+    while CurrentMember < 101 do
+    begin
+        volumeList[CurrentMember].memPtr := Nil;
+        CurrentMember := CurrentMember + 1;
+    end;
+
+    numOfVolumes := EZGetVolumeList(@volumeList,
+                                    ord4(dcmBlockDevice),
+                                    ord4(dcmBlockDevice));
+
+    with TmpRect do
+    begin
+        h1 := 11;
+        v1 := 24;
+        h2 := 222;
+        v2 := 106;
+    end;
+ 
+    ctlList[volumeListItem] := newListTemplate(volumeListItem,
+                                               TmpRect,
+                                               0,
+                                               0,
+                                               0,
+                                               numOfVolumes,
+                                               8,
+                                               2,
+                                               1,
+                                               @EZDrawMember,
+                                               10,
+                                               13,
+                                               @volumeList,
+                                               Nil);
+
+    numOfDevices := EZGetDeviceTypeList(@deviceList,
+                                        ord4(dcmBlockDevice + dcmRemovableMedia),
+                                        ord4(dcmBlockDevice + dcmRemovableMedia));
+
+    numOfDevices := numOfDevices + 1;
+    with deviceList[numOfDevices] do
+    begin
+        memPtr := @'A GS/OS file.';
+        memFlag := 0;
+        memDevice := -1;
+        memValue := EZDeviceIcon(0);
+    end;
+
+    with TmpRect do
+    begin
+        h1 := 360;
+        v1 := 24;
+        h2 := 573;
+        v2 := 106;
+    end;
+ 
+    ctlList[deviceListItem] := newListTemplate(deviceListItem,
+                                               TmpRect,
+                                               0,
+                                               0,
+                                               0,
+                                               numOfDevices,
+                                               8,
+                                               2,
+                                               1,
+                                               @EZDrawMember,
+                                               10,
+                                               13,
+                                               @deviceList,
+                                               Nil);
+
+    ctlList[NullItem] := Nil;
+ 
+    NewControl2Junk := NewControl2(BPPort,
+                                   3,
+                                   @ctlList[1]);
+ 
+    EZSortList(volumeListItem);
+    EZSelectMember(1, volumeListItem);
+    EZSortList(deviceListItem);
+    EZSelectMember(1, deviceListItem);
+    CurrentMember := 0;
+
+    SetVolumeName;
+
+    itemHit := 0;
+    volumeChanged := False;
+ 
+    Repeat
+        If Not UserAbort then
+            itemHit := EZDialogEvent(NumOfClicks);
+ 
+        Case ord(itemHit) of
+            CancelItem      :   UserAbort := True;
+            SelectFilesItem :   HandleFileSelection(notSelected);
+            IncrementalItem :   volumeChanged := True;
+            volumeListItem  :   begin
+                                    SetVolumeName;
+
+                                    If NumOfClicks = 2 then
+                                        HandleFileSelection(notSelected);
+                                end;
+            OkItem          :   CheckIfOkToStart;
+            reScanItem      :   reScanVolumes;
+            Otherwise       :   ;
+        end;
+    Until (itemHit = OkItem) or
+          (UserAbort);
+
+    If Not UserAbort then
+    begin
+        With BackupHeader do
+        begin
+            BackupType := CheckBoxOn(IncrementalItem);
+            RootDirName := currentVolume.theString;
+
+            If (SavesetLocation.DestType = 1) then
+            begin
+                If (SavesetLocation.DeviceType = AppletalkFileServer) then
+                begin
+                    Msg := concat('64:Note that you are unable to write directly ',
+                                  'to a file server, so the Saveset will be placed ',
+                                  'in a folder on the file server.:^#6');
+    
+                    Junk := AlertWindow(0,Nil,@Msg);
+                end;
+
+                UserAbort := not SelectDestinationFile;
+            end;
+        end;
+    end;
+
+    CurrentMember := 1;
+    while CurrentMember < 101 do
+    begin
+        If deviceList[CurrentMember].memPtr <> Nil then
+            dispose(volumeList[CurrentMember].memPtr);
+
+        CurrentMember := CurrentMember + 1;
+    end;
+
+    CloseWindow(BPPort);
+
+    BackupParametersSet := not UserAbort;
+end;
+
+Procedure RefreshCBPort;
+var
+    tmpRect     :   rect;
+    penSize     :   point;
+    barLength   :   Integer;
+begin
+    setPort(CBPort);
+
+    moveTo(10,10);
+    DrawString(@'Updating file data ...');
+
+    setRect(tmpRect,8,12,212,23);
+    
+    SetSolidPenPat(0);
+    GetPenSize(penSize);
+    SetPenSize(3,1);
+    FrameRect(TmpRect);
+    SetPenSize(penSize.h,penSize.v);
+
+    barLength := trunc(CBPercent * 198.0);
+
+    with tmpRect do
+    begin
+        h1 := 11;
+        h2 := h1 + barLength;
+        v1 := 13;
+        v2 := 22;
+    end;
+
+    SetPenPat(RedPattern^);
+    PaintRect(tmpRect);
+end;
+
+Procedure ClearBackupBits;
+var
+    bufferSize      :   longint;
+    blockCount      :   longint;
+    readCount       :   longint;
+    tmpRect         :   rect;
+    noError         :   boolean;
+    currentBlock    :   longint;
+    bufferHandle    :   handle;
+    savePort        :   grafPortPtr;
+    FullName        :   PathName;
+    PathString      :   GSOSInString;
+    clearBkParm     :   clrBkupBitOSDCB;
+    sessionParms        : nullOSDCB;
+begin
+    savePort := getPort;
+
+    setRect(tmpRect,210,87,430,113);
+
+    CBPercent := 0.0;
+
+    CBPort := startupEZDialog(tmpRect, @RefreshCBPort);
+    setPort(CBPort);
+
+    EZForceRefresh;
+
+    currentEntry := BackupHeader.FileList;
+    filesLeftToDo := 0;
+
+    sessionParms.pcount := 0;
+    BeginSessionGS(sessionParms);
+
+    while (currentEntry <> Nil) and
+          (filesLeftToDo < BackupHeader.NumOfFiles) do
+    begin
+        If currentEntry^.Selected <> notSelected then
+        begin
+            BuildPathName(currentEntry, FullName); { Constructs the full pathname }
+                                                   { of a file from the list.     }
+ 
+            PathString.theString := FullName;
+            PathString.size := length(FullName);
+ 
+            With clearBkParm do
+            begin
+                pcount := 1;
+                pathname := @PathString;
+            end;
+
+            ClearBackupGS(clearBkParm);
+
+            CBPercent := filesLeftToDo / BackupHeader.NumOfFiles;
+
+            RefreshCBPort;
+
+            filesLeftToDo := filesLeftToDo + 1;
+        end;
+
+        currentEntry := currentEntry^.NextFile;
+    end;
+
+    EndSessionGS(sessionParms);
+
+    CloseWindow(CBPort);
+
+    setPort(savePort);
+end;
+
+Function StartBackup;
+Const
+    AbortItem           = 1;
+    NullItem            = 2;
+var
+    SBPort              : grafPortPtr;
+ 
+    itemHit             : longint;
+    NumOfClicks         : integer;
+ 
+    TmpRect             : Rect;
+ 
+    ctlList             : array [1..NullItem] of ptr;
+ 
+    NewControl2Junk     : ctlRecHndl;
+ 
+    DestFound           : Boolean;
+    MsgBox              : grafPortPtr;
+ 
+begin
+    ComputeHeaderDetails(0);
+
+    BackupHeader.NumLeft := BackupHeader.NumOfFiles;
+    filesLeftToDo := BackupHeader.NumOfFiles;
+    currentEntry := BackupHeader.FileList;
+
+    With TmpRect do
+    begin
+        h1 := 130;
+        v1 := 68;
+        h2 := 510;
+        v2 := 133;
+    end;
+ 
+    SBPort := startupEZDialog(TmpRect,
+                              @RefreshActivityWindow);
+ 
+    SetPort(SBPort);
+    currentPort := SBPort;
+ 
+    with TmpRect do
+    begin
+        h1 := 230;
+        v1 := 49;
+        h2 := 370;
+        v2 := 61;
+    end;
+ 
+    ctlList[AbortItem] := newButtonTemplate(AbortItem,
+                                            TmpRect,
+                                            0,
+                                            0,
+                                            0,
+                                            @'Cancel',
+                                            Nil,
+                                            Nil);
+ 
+    ctlList[NullItem] := Nil;
+ 
+    NewControl2Junk := NewControl2(SBPort, 3, @ctlList[1]);
+
+    DrawControls(SBPort);
+ 
+    itemHit := 0;
+  
+    DestFound := OpenDest;
+ 
+    If not DestFound then
+    begin
+        SelectWindow(SBPort); { we need to make this the active port since }
+        SetPort(SBPort);      { a call to showMessage in openDest made the }
+                              { message port the selected port.            }
+        WaitCursor;
+
+        while (currentEntry <> Nil) and
+              (itemHit <> AbortItem) and
+              (not UserAbort) do
+        begin
+            If currentEntry^.Selected <> notSelected then
+            begin
+                BackupFile(currentEntry);
+
+                with BackupHeader do
+                    NumLeft := NumLeft - 1;
+
+                DisplayDetails;
+
+                itemHit := EZDialogEvent(NumOfClicks);
+            end;
+ 
+            currentEntry := currentEntry^.NextFile;
+        end;
+ 
+        If itemHit = AbortItem then
+            UserAbort := True;
+
+        If (ByteIndex <> 0) and
+           (not UserAbort) then
+            WriteFileData;
+
+        If not UserAbort then
+        begin
+            MsgBox := EZMessageBox('Writing header data ...');
+            WriteHeader;
+            CloseWindow(MsgBox);
+
+            If not UserAbort then
+                ClearBackupBits;
+        end;
+
+        CloseSaveset;
+
+        InitCursor;
+    end;
+ 
+    CloseWindow(SBPort);
+
+    If (SavesetLocation.DestType = 0) and
+       (NumOfDisks = 0) then
+        CloseWindow(messagePort);
+ 
+    StartBackup := DestFound;
+end;
+
+end.

@@ -1,0 +1,10 @@
+delete int/=.int
+delete obj/=.a
+delete obj/=.root
+delete obj/=.obj
+filetype =.unit src 5
+filetype =.pas src 5
+filetype =.inc src 5
+delete ez.backup
+delete obj/ezbackup
+delete obj/backuplib

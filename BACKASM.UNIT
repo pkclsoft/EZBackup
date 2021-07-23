@@ -1,0 +1,16 @@
+{$ keep 'obj/Backasm' }
+Unit Backasm;
+
+interface
+
+Uses Common;
+
+Function CopyToBuffer(Source    : Ptr;
+                      ByteCount : LongInt) : LongInt; extern;
+
+Function CopyFromBuffer(Dest      : Ptr;
+                        ByteCount : LongInt) : LongInt; extern;
+
+implementation
+
+end.

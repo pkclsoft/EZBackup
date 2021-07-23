@@ -1,0 +1,2060 @@
+{$ keep 'obj/Backedit' }
+Unit Backedit;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata, Backmisc, Backlist;
+
+Procedure EditFileList(entryMode    :   integer);
+
+implementation
+
+{$ segment 'Backup'             }
+
+Const
+{$ copy 'BackTConst.Inc' }
+
+Procedure RefreshEditWindows;
+begin
+    DrawControls(GetPort);
+end;
+
+Procedure RefreshDetailWindow;
+var
+    TmpString   :   pString;
+    TmpText     :   textBlock;
+    savePort    :   grafPortPtr;
+    tmpRect     :   rect;
+begin
+    setPort(currentPort);
+
+    with tmpRect do
+    begin
+        h1 := 10;
+        h2 := 619;
+        v1 := 0;
+        v2 := 13;
+    end;
+
+    SetSolidPenPat(3);
+    PaintRect(tmpRect);
+
+    moveTo(10,12);
+    DrawString(@'Saveset includes ');
+
+    With BackupHeader, SavesetLocation do
+    begin
+        If NumOfFiles = 0
+        then
+            DrawString(@'no files.')
+        else
+            begin
+                TmpString := cnvis(NumOfFiles);
+                DrawString(@TmpString);
+                DrawString(@' files, totalling ');
+
+                Long2Dec(BackupLength div 1024, @TmpText, 6, False);
+                DrawText(@TmpText,6);
+                DrawString(@'K ');
+
+                If SavesetLocation.DestType = 0 then
+                begin
+                    DrawString(@'(');
+
+                    Long2Dec(TotalDisks, @TmpText, 2, False);
+                    DrawText(@TmpText,2);
+                    DrawString(@' disk(s) [+ list disk]) ');
+                end;
+
+                DrawString(@'in length.');
+            end;
+    end;
+
+    SetSolidPenPat(0);
+    moveTo(10, 15);
+    lineTo(609, 15);
+ 
+    DrawControls(currentPort);
+end;
+
+Procedure SelectAllFiles;
+var
+    currentEntry        : FileRecPtr;
+    nextEntry           : FileRecPtr;
+begin
+    currentEntry := BackupHeader.FileList;
+    While currentEntry <> Nil do
+    begin
+        currentEntry^.Selected := included;
+        currentEntry := currentEntry^.NextFile;
+    end;
+end;
+
+Procedure EditFileList;
+const
+    bFirstItem          =   1;
+    OkItem              =   51;
+    InfoItem            =   52;
+    HelpItem            =   53;
+    viewModeNullItem    =   54;
+    IncludeItem         =   54;
+    ExcludeItem         =   55;
+    backupModeNullItem  =   56;
+    MarkItem            =   56;
+    restoreModeNullItem =   57;
+
+    dFirstItem          =   8;
+    dirListItem         =   58;
+    ParentMenuItem      =   59;
+    dNullItem           =   60;
+
+    fFirstItem          =   11;
+    FileListItem        =   61;
+    fModeItem           =   62;
+    fNullItem           =   63;
+
+    NullItem            =   13;
+
+    offset              =   50;
+
+    popupMenuNumber     =   900;
+
+    MaxMembers          =   2500;
+
+    folders             =   0;
+    files               =   1;
+
+type
+    fpString            =   packed array [0..32] of char;
+    fpStringPtr         =   ^fpString;
+
+    memRec              =   record
+                                memPtr      :   fpStringPtr;
+                                memFlag     :   byte;
+                                memValue    :   longint;
+                                memEntryPtr :   FileRecPtr;
+                            end;
+    memRecPtr           =   ^memRec;
+
+    memberList          =   array [1..MaxMembers] of memRec;
+    memberListPtr       =   ^memberList;
+var
+    ctlList             :   array [1..NullItem] of ptr;
+
+    NewControl2Junk     :   ctlRecHndl;
+
+    bPort               :   grafPortPtr;
+    bWindowRecord       :   paramList;
+    dPort               :   grafPortPtr;
+    dWindowRecord       :   paramList;
+    fPort               :   grafPortPtr;
+    fWindowRecord       :   paramList;
+
+    tmpRect             :   rect;
+
+    itemHit             :   longint;
+
+    NumOfClicks         :   integer;
+
+    dirListSize         :   integer;
+    fileListSize        :   integer;
+    selectedDir         :   integer;
+    selectedFile        :   integer;
+
+    dirList             :   memberListPtr;
+    fileList            :   memberListPtr;
+
+    popupDefault        :   integer;
+    popupHeader         :   pString;
+    popupString         :   pString;
+
+    editEvent           :   EventRecord;
+    eventHandled        :   boolean;
+
+    dirPopupTemplate    :   ptr;
+
+    currentPrefix       :   GSOSOutString;
+
+    currentFiles        :   FileRecPtr;
+
+    selection           :   integer;
+
+    hiddenPort          :   grafPortPtr;
+
+    displayDimmedDirs   :   boolean;
+
+    EditBufferHandle    :   handle;
+    EditBuffer          :   ptr;
+
+    Msg                 :   textBlock;
+    buttonPressed       :   Integer;
+
+    Procedure ObtainEditBuffer;
+    const
+        EditBufferSize  =   $00010000;
+    begin
+        EditBufferHandle  := NewHandle(EditBufferSize, userID,
+                                       attrLocked  + attrFixed +
+                                       attrNoCross + attrPage  +
+                                       attrNoPurge + attrNoSpec, Nil);
+
+        If ToolError = 0
+        then
+            EditBuffer := Pointer(EditBufferHandle^)
+        else
+            EditBuffer := Nil;
+    end;
+
+    Procedure InitLists;
+    var
+        memberNumber    :   integer;
+    begin
+        dirList := Pointer(EditBuffer);
+        fileList := Pointer(ord4(EditBuffer) + ord4(32768));
+
+        selectedDir := 1;
+        selectedFile := 1;
+
+        WaitCursor;
+
+        For memberNumber := 1 to MaxMembers do
+        begin
+            dirList^[memberNumber].memPtr := Nil;
+            fileList^[memberNumber].memPtr := Nil;
+        end;
+
+        InitCursor;
+    end;
+
+    Procedure DisposeLists;
+    var
+        memberNumber    :   integer;
+    begin
+        WaitCursor;
+
+        For memberNumber := 1 to MaxMembers do
+        begin
+            If dirList^[memberNumber].memPtr <> Nil then
+                dispose(dirList^[memberNumber].memPtr);
+            If fileList^[memberNumber].memPtr <> Nil then
+                dispose(fileList^[memberNumber].memPtr);
+        end;
+
+        InitCursor;
+    end;
+
+    Function EndOfLoop(treeTop  :   fileRecPtr;
+                       curEntry :   fileRecPtr) : Boolean;
+
+        Function aboveTree : Boolean;
+        begin
+            aboveTree := false;
+
+            repeat
+                If curEntry^.ParentDir = treeTop then
+                    aboveTree := True;
+
+                if treeTop <> Nil then
+                    treeTop := treeTop^.ParentDir;
+            until treeTop = Nil;
+
+            { we must repeat the check since the loop may end without a check }
+            { on the nil occurence of treeTop.                                }
+
+            If curEntry^.ParentDir = treeTop then
+                aboveTree := True;
+        end;
+            
+    begin
+        if (curEntry = Nil) or aboveTree
+        then
+            EndOfLoop := True
+        else
+            EndOfLoop := False;
+    end;
+
+    Function directoryMark(theDirectory :   FileRecPtr) : longint;
+    var
+        curEntry        :   FileRecPtr;
+        allMarked       :   Boolean;
+        someIncluded    :   Boolean;
+        someMarked      :   Boolean;
+    begin
+        curEntry := theDirectory^.NextFile;
+
+        allMarked := True;
+        someMarked := False;
+        someIncluded := False;
+
+        while not EndOfLoop(theDirectory^.ParentDir, curEntry) do
+        begin
+            case curEntry^.Selected of
+                included    :   someIncluded := True;
+                markedOnly  :   someMarked := True;
+                notSelected :   allMarked := False;
+            end;
+
+            curEntry := curEntry^.NextFile;
+        end;
+
+        If theDirectory^.Selected = included
+        then
+            begin
+                if allMarked and someIncluded
+                then
+                    directoryMark := closedAppleMask
+                else
+                    If someIncluded
+                    then
+                        directoryMark := openAppleMask
+                    else
+                        begin
+                            directoryMark := 0;
+                            theDirectory^.Selected := notSelected;
+                        end;
+            end
+        else
+            If someMarked
+            then
+                directoryMark := diamondMask
+            else
+                begin
+                    directoryMark := 0;
+                    theDirectory^.Selected := notSelected;
+                end;
+    end;
+
+    Function listMark : longint;
+    var
+        curEntry        :   FileRecPtr;
+        allMarked       :   Boolean;
+        someIncluded    :   Boolean;
+        someMarked      :   Boolean;
+    begin
+        curEntry := BackupHeader.FileList;
+
+        allMarked := True;
+        someMarked := False;
+        someIncluded := False;
+
+        while curEntry <> Nil do
+        begin
+            case curEntry^.Selected of
+                included    :   someIncluded := True;
+                markedOnly  :   someMarked := True;
+                notSelected :   allMarked := False;
+            end;
+
+            curEntry := curEntry^.NextFile;
+        end;
+
+        If BackupHeader.Selected = included
+        then
+            begin
+                if allMarked and someIncluded
+                then
+                    listMark := closedAppleMask
+                else
+                    If someIncluded
+                    then
+                        listMark := openAppleMask
+                    else
+                        begin
+                            listMark := 0;
+                            BackupHeader.Selected := notSelected;
+                        end;
+            end
+        else
+            If someMarked
+            then
+                listMark := diamondMask
+            else
+                begin
+                    listMark := 0;
+                    BackupHeader.Selected := notSelected;
+                end;
+    end;
+
+    Procedure buildDirList(var dirListSize  :   Integer);
+    var
+        dirMember       : Integer;
+        curEntry        : FileRecPtr;
+        StartChar       : Integer;
+        TmpString       : pString;
+    begin
+        dirMember := 1;
+ 
+        If currentDirectory = Nil
+        then
+            begin
+                curEntry := BackupHeader.FileList;
+
+                with BackupHeader.RootDirName do
+                    TmpString := copy(theString, 2, size - 1);
+
+                StartChar := pos(Separator, TmpString);
+
+                if dirList^[dirMember].memPtr = Nil then
+                    new(dirList^[dirMember].memPtr);
+
+                With dirList^[dirMember] do
+                begin
+                    memPtr^ := concat(Separator, copy(TmpString, 1, StartChar - 1));
+                    memPtr^[1] := chr(1);
+                    memFlag := 0;
+                    With BackupHeader do
+                        memValue := SourceDeviceIcon | listMark;
+                    memEntryPtr := Nil;
+                end;
+
+                dirMember := dirMember + 1;
+            end
+        else
+            curEntry := currentDirectory;
+
+        Repeat
+            If (currentDirectory = curEntry^.ParentDir) and
+               (curEntry^.DirEntry.fileType = DirectoryFile) then
+            begin
+                With dirList^[dirMember] do
+                begin
+                    if memPtr = Nil then
+                        new(memPtr);
+
+                    memPtr^ := copy(curEntry^.Filename.theString.theString,1,
+                                    curEntry^.FileName.theString.size);
+                    memFlag := 0;
+                    memEntryPtr := curEntry;
+
+                    memValue := ord4(DirectoryFile) |
+                                directoryMark(curEntry);
+                end;
+
+                dirMember := dirMember + 1;
+            end;
+
+            curEntry := curEntry^.NextFile;
+        Until (curEntry = Nil) or
+              (dirMember = MaxMembers + 1);
+ 
+        dirListSize := dirMember - 1;
+    end;
+
+    Procedure markDirList;
+    var
+        theMember       : Integer;
+    begin
+        theMember := 1;
+ 
+        If currentDirectory = Nil then
+        begin
+            With dirList^[theMember], BackupHeader do
+                    memValue := SourceDeviceIcon | listMark;
+
+            theMember := theMember + 1;
+        end;
+
+        Repeat
+            With dirList^[theMember] do
+                memValue := ord4(DirectoryFile) |
+                            directoryMark(memEntryPtr);
+
+            theMember := theMember + 1;
+        Until (theMember = dirListSize + 1);
+    end;
+
+    Procedure markFileList;
+    var
+        theMember       :   Integer;
+        fileType        :   longint;
+    begin
+        theMember := 1;
+ 
+        Repeat
+            With fileList^[theMember] do
+            begin
+                fileType := memValue & ord4($0000ffff);
+
+                If (fileType <> ord4(DirectoryFile)) then begin
+                    memFlag := 0;
+
+                    if memEntryPtr^.Selected = included then
+                        memValue := fileType | tickMask
+                    else
+                        if memEntryPtr^.Selected = markedOnly then
+                            memValue := fileType | deltaMask
+                        else
+                            memValue := fileType;
+                end else begin
+                    memFlag := $60;
+                    memValue := ord4(DirectoryFile) | 
+                                directoryMark(memEntryPtr);
+                end;
+            end;
+
+            theMember := theMember + 1;
+        Until (theMember = fileListSize + 1);
+    end;
+
+    Procedure buildFileList(var fileListSize    :   Integer);
+    var
+        fileMember      : Integer;
+        curEntry        : FileRecPtr;
+        StartChar       : Integer;
+        TmpString       : pString;
+    begin
+        fileMember := 1;
+ 
+        If currentFiles = Nil
+        then
+            curEntry := BackupHeader.FileList
+        else
+            curEntry := currentFiles;
+
+        Repeat
+            with curEntry^ do
+            begin
+                If (currentFiles = ParentDir) then
+                begin
+                    If (DirEntry.fileType <> DirectoryFile) or
+                       ((DirEntry.fileType = DirectoryFile) and
+                        displayDimmedDirs) then
+                    begin
+                        With fileList^[fileMember] do
+                        begin
+                            if memPtr = Nil then
+                                new(memPtr);
+
+                            memPtr^ := copy(Filename.theString.theString, 1,
+                                            FileName.theString.size);
+
+                            memEntryPtr := curEntry;
+
+                            memValue := ord4(DirEntry.fileType);
+
+                            If (DirEntry.fileType <> DirectoryFile)
+                            then
+                                begin
+                                    memFlag := 0;
+
+                                    if Selected = included
+                                    then
+                                        memValue := memValue | tickMask
+                                    else
+                                        if Selected = markedOnly then
+                                            memValue := memValue | deltaMask;
+                                end
+                            else
+                                If displayDimmedDirs then { true if folders to be displayed }
+                                begin
+                                    memFlag := $60;
+                                    memValue := memValue | directoryMark(curEntry);
+                                end;
+                        end;
+
+                        fileMember := fileMember + 1;
+                    end;
+                end;
+            end;
+
+            curEntry := curEntry^.NextFile;
+        Until (curEntry = Nil) or
+              (fileMember = MaxMembers + 1);
+ 
+        fileListSize := fileMember - 1;
+    end;
+
+    Procedure SetupBPort;
+
+        Procedure createBackupButtons;
+        begin
+            with TmpRect do
+            begin
+                h1 := 10;
+                v1 := 20;
+                h2 := 110;
+                v2 := 31;
+            end;
+
+            ctlList[OkItem - offset] := newButtonTemplate(OkItem,
+                                                          TmpRect,
+                                                          0,
+                                                          0,
+                                                          0,
+                                                          @'Ok',
+                                                          Nil,
+                                                          Nil);
+
+            with TmpRect do
+            begin
+                h1 := 120;
+                v1 := 20;
+                h2 := 260;
+                v2 := 31;
+            end;
+ 
+            ctlList[InfoItem - offset] := newButtonTemplate(InfoItem,
+                                                            TmpRect,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            @'File Information',
+                                                            Nil,
+                                                            Nil);
+
+            with TmpRect do
+            begin
+                h1 := 270;
+                v1 := 20;
+                h2 := 380;
+                v2 := 31;
+            end;
+ 
+            ctlList[IncludeItem - offset] := newButtonTemplate(IncludeItem,
+                                                            TmpRect,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            @'Include',
+                                                            Nil,
+                                                            Nil);
+
+            with TmpRect do
+            begin
+                h1 := 390;
+                v1 := 20;
+                h2 := 500;
+                v2 := 31;
+            end;
+ 
+            ctlList[ExcludeItem - offset] := newButtonTemplate(ExcludeItem,
+                                                            TmpRect,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            @'Exclude',
+                                                            Nil,
+                                                            Nil);
+
+            with TmpRect do
+            begin
+                h1 := 510;
+                v1 := 20;
+                h2 := 610;
+                v2 := 31;
+            end;
+
+            ctlList[HelpItem - offset] := newButtonTemplate(HelpItem,
+                                                            TmpRect,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            @'Help',
+                                                            Nil,
+                                                            Nil);
+
+            ctlList[backupModeNullItem - offset] := Nil;
+        end;
+
+        Procedure createViewButtons;
+        begin
+            with TmpRect do
+            begin
+                h1 := 10;
+                v1 := 20;
+                h2 := 150;
+                v2 := 31;
+            end;
+
+            ctlList[OkItem - offset] := newButtonTemplate(OkItem,
+                                                          TmpRect,
+                                                          0,
+                                                          0,
+                                                          0,
+                                                          @'Ok',
+                                                          Nil,
+                                                          Nil);
+
+            with TmpRect do
+            begin
+                h1 := 210;
+                v1 := 20;
+                h2 := 410;
+                v2 := 31;
+            end;
+ 
+            ctlList[InfoItem - offset] := newButtonTemplate(InfoItem,
+                                                            TmpRect,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            @'File Information',
+                                                            Nil,
+                                                            Nil);
+
+            with TmpRect do
+            begin
+                h1 := 470;
+                v1 := 20;
+                h2 := 610;
+                v2 := 31;
+            end;
+
+            ctlList[HelpItem - offset] := newButtonTemplate(HelpItem,
+                                                            TmpRect,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            @'Help',
+                                                            Nil,
+                                                            Nil);
+
+            ctlList[viewModeNullItem - offset] := Nil;
+        end;
+
+        Procedure createRestoreButtons;
+        begin
+            with TmpRect do
+            begin
+                h1 := 10;
+                v1 := 20;
+                h2 := 80;
+                v2 := 31;
+            end;
+
+            ctlList[OkItem - offset] := newButtonTemplate(OkItem,
+                                                          TmpRect,
+                                                          0,
+                                                          0,
+                                                          0,
+                                                          @'Ok',
+                                                          Nil,
+                                                          Nil);
+
+            with TmpRect do
+            begin
+                h1 := 90;
+                v1 := 20;
+                h2 := 230;
+                v2 := 31;
+            end;
+ 
+            ctlList[InfoItem - offset] := newButtonTemplate(InfoItem,
+                                                            TmpRect,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            @'File Information',
+                                                            Nil,
+                                                            Nil);
+
+            with TmpRect do
+            begin
+                h1 := 240;
+                v1 := 20;
+                h2 := 340;
+                v2 := 31;
+            end;
+ 
+            ctlList[IncludeItem - offset] := newButtonTemplate(IncludeItem,
+                                                            TmpRect,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            @'Include',
+                                                            Nil,
+                                                            Nil);
+
+            with TmpRect do
+            begin
+                h1 := 350;
+                v1 := 20;
+                h2 := 450;
+                v2 := 31;
+            end;
+ 
+            ctlList[ExcludeItem - offset] := newButtonTemplate(ExcludeItem,
+                                                            TmpRect,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            @'Exclude',
+                                                            Nil,
+                                                            Nil);
+
+            with TmpRect do
+            begin
+                h1 := 460;
+                v1 := 20;
+                h2 := 530;
+                v2 := 31;
+            end;
+ 
+            ctlList[MarkItem - offset] := newButtonTemplate(MarkItem,
+                                                            TmpRect,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            @'Mark',
+                                                            Nil,
+                                                            Nil);
+
+            with TmpRect do
+            begin
+                h1 := 540;
+                v1 := 20;
+                h2 := 610;
+                v2 := 31;
+            end;
+
+            ctlList[HelpItem - offset] := newButtonTemplate(HelpItem,
+                                                            TmpRect,
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            @'Help',
+                                                            Nil,
+                                                            Nil);
+
+            ctlList[restoreModeNullItem - offset] := Nil;
+        end;
+
+    begin
+        with tmpRect do
+        begin
+            h1 := 10;
+            v1 := 160;
+            h2 := 629;
+            v2 := 196;
+        end;
+
+        with bWindowRecord do
+        begin
+            paramLength := 78;
+            wFrameBits := $006b;   { % 0000 0000 0110 1011 }
+            wTitle := Nil;
+            wRefCon := 0;
+            wZoom.h1 := 0;
+            wZoom.h2 := 0;
+            wZoom.v1 := 0;
+            wZoom.v2 := 0;
+            wYOrigin := 0;
+            wXOrigin := 0;
+            wScrollVer := 0;
+            wScrollHor := 0;
+            wPageVer := 0;
+            wPageHor := 0;
+            wInfoRefCon := 0;
+            wInfoHeight := 0;
+            wFrameDefProc := nil;
+            wInfoDefProc := nil;
+            wPlane := pointer(topMost);
+            wStorage := nil;
+        end;
+        
+        bPort := startupEZWindow(tmpRect,
+                                 @bWindowRecord,
+                                 @RefreshDetailWindow);
+
+        SetPort(bPort);
+        currentPort := bPort;
+
+        case entryMode of
+            backupMode  :   createBackupButtons;
+            restoreMode :   createRestoreButtons;
+            viewMode    :   createViewButtons;
+        end;
+
+        NewControl2Junk := NewControl2(bPort,
+                                       3,
+                                       @ctlList[bFirstItem]);
+    end;
+
+    Procedure SetupDPort;
+    var
+        lastSeparator   :   integer;
+    begin
+        with tmpRect do
+        begin
+            h1 := 10;
+            v1 := 29;
+            h2 := 314;
+            v2 := 155;
+        end;
+
+        with dWindowRecord do
+        begin
+            paramLength := 78;
+            wFrameBits := $806b;   { % 1000 0000 0010 1011 }
+            wTitle := @' Folders ';
+            wRefCon := 0;
+            wZoom.h1 := 0;
+            wZoom.h2 := 0;
+            wZoom.v1 := 0;
+            wZoom.v2 := 0;
+            wYOrigin := 0;
+            wXOrigin := 0;
+            wScrollVer := 0;
+            wScrollHor := 0;
+            wPageVer := 0;
+            wPageHor := 0;
+            wInfoRefCon := 0;
+            wInfoHeight := 0;
+            wFrameDefProc := nil;
+            wInfoDefProc := nil;
+            wPlane := pointer(topMost);
+            wStorage := nil;
+        end;
+        
+        dPort := startupEZWindow(tmpRect, @dWindowRecord, @RefreshEditWindows);
+        SetPort(dPort);
+
+        buildDirList(dirListSize);
+
+        With TmpRect do
+        begin
+            h1 := 10;
+            v1 := 22;
+            h2 := 270;
+            v2 := 124;
+        end;
+
+        ctlList[dirListItem - offset] := newListTemplate(dirListItem,
+                                                   TmpRect,
+                                                   0,
+                                                   0,
+                                                   0,
+                                                   dirListSize,
+                                                   10,
+                                                   0,
+                                                   1,
+                                                   @EZDrawMember,
+                                                   10,
+                                                   13,
+                                                   Pointer(dirList),
+                                                   Nil);
+
+        with BackupHeader.RootDirName do
+            popupString := copy(theString, 1, size);
+
+        lastSeparator := rindex(popupString, Separator);
+        delete(popupString, 1, lastSeparator);
+        popupHeader := popupString;
+
+        currentPrefix.maxSize := 255;
+        currentPrefix.theString.theString := copy(popupString, 1, length(popupString));
+        currentPrefix.theString.size := length(popupString);
+
+        dirPopupTemplate := EZNewDirectoryMenu(currentPrefix.theString,
+                                               popupMenuNumber,
+                                               popupDefault);
+
+        with TmpRect do
+        begin
+            h1 := 10;
+            v1 := 4;
+            h2 := 295;
+            v2 := 16;
+        end;
+ 
+        ctlList[ParentMenuItem - offset] := newPopUpTemplate(ParentMenuItem,
+                                                    TmpRect,
+                                                    $0070, { 0000 0000 0111 0000 }
+                                                    $0000, { 0000 0000 0000 0000 }
+                                                    0,
+                                                    0,
+                                                    dirPopupTemplate,
+                                                    popupDefault,
+                                                    Nil);
+
+        ctlList[dNullItem - offset] := Nil;
+
+        NewControl2Junk := NewControl2(dPort,
+                                       3,
+                                       @ctlList[dFirstItem]);
+
+        EZSortList(dirListItem);
+        If dirList^[1].memPtr^[1] = chr(1) then
+            dirList^[1].memPtr^[1] := Separator;
+        EZSelectMember(1, dirListItem);
+    end;
+
+    Procedure SetupFPort;
+    begin
+        with tmpRect do
+        begin
+            h1 := 325;
+            v1 := 29;
+            h2 := 629;
+            v2 := 155;
+        end;
+
+        with fWindowRecord do
+        begin
+            paramLength := 78;
+            wFrameBits := $806b;   { % 1000 0000 0110 1011 }
+            wTitle := @' Files ';
+            wRefCon := 0;
+            wZoom.h1 := 0;
+            wZoom.h2 := 0;
+            wZoom.v1 := 0;
+            wZoom.v2 := 0;
+            wYOrigin := 0;
+            wXOrigin := 0;
+            wScrollVer := 0;
+            wScrollHor := 0;
+            wPageVer := 0;
+            wPageHor := 0;
+            wInfoRefCon := 0;
+            wInfoHeight := 0;
+            wFrameDefProc := nil;
+            wInfoDefProc := nil;
+            wPlane := pointer(topMost);
+            wStorage := nil;
+        end;
+        
+        fPort := startupEZWindow(tmpRect, @fWindowRecord, @RefreshEditWindows);
+        SetPort(fPort);
+
+        displayDimmedDirs := True;
+        currentFiles := dirList^[1].memEntryPtr;
+        buildFileList(fileListSize);
+
+        With TmpRect do
+        begin
+            h1 := 10;
+            v1 := 12;
+            h2 := 270;
+            v2 := 124;
+        end;
+
+        ctlList[FileListItem - offset] := newListTemplate(FileListItem,
+                                                 TmpRect,
+                                                 0,
+                                                 0,
+                                                 0,
+                                                 fileListSize,
+                                                 11,
+                                                 0,
+                                                 1,
+                                                 @EZDrawMember,
+                                                 10,
+                                                 13,
+                                                 pointer(fileList),
+                                                 Nil);
+
+        with TmpRect do
+        begin
+            h1 := 10;
+            v1 := 2;
+            h2 := 0;
+            v2 := 0;
+        end;
+ 
+        ctlList[fModeItem - offset] := newCheckBoxTemplate(fModeItem,
+                                                           TmpRect,
+                                                           0,
+                                                           0,
+                                                           0,
+                                                           @'Display dimmed folders',
+                                                           ord(True),
+                                                           Nil,
+                                                           Nil);
+
+        ctlList[fNullItem - offset] := Nil;
+
+        NewControl2Junk := NewControl2(fPort,
+                                       3,
+                                       @ctlList[fFirstItem]);
+
+        EZSortList(FileListItem);
+        EZSelectMember(1, FileListItem);
+
+        selection := files;
+    end;
+
+    Procedure UpdateDirList(marking : Boolean);
+    begin
+        WaitCursor;
+
+        If marking then
+            markDirList
+        else
+            buildDirList(dirListSize);
+
+        If dirListSize = 0 then
+            selectedDir := 0;
+
+        SelectWindow(dPort);
+        SetPort(dPort);
+        EZNewList(@EZDrawMember,
+                  selectedDir,
+                  pointer(dirList),
+                  dirListSize,
+                  selectedDir,
+                  dirListItem);
+
+        If dirList^[1].memPtr^[1] = chr(1) then
+            dirList^[1].memPtr^[1] := Separator;
+
+        currentPrefix.maxSize := 255;
+        currentPrefix.theString.theString := copy(popupString, 1, length(popupString));
+        currentPrefix.theString.size := length(popupString);
+
+        RefreshParentMenu(ParentMenuItem,
+                          popUpTemplatePtr(ctlList[ParentMenuItem - offset]),
+                          dirPopupTemplate,
+                          dPort,
+                          currentPrefix);
+
+        If not marking then
+            InvalCtls(dPort);
+
+        InitCursor;
+    end;
+
+    Procedure UpdateFileList(marking : Boolean);
+    begin
+        WaitCursor;
+
+        If selectedDir <> 0 then begin
+            If marking then
+                markFileList
+            else
+                buildFileList(fileListSize);
+        end else
+            fileListSize := 0;
+
+        If fileListSize = 0 then
+            selectedFile := 0;
+
+        SetPort(fPort);
+        SelectWindow(fPort);
+        EZNewList(@EZDrawMember,
+                  selectedFile,
+                  pointer(fileList),
+                  fileListSize,
+                  selectedFile,
+                  FileListItem);
+
+        If not marking then
+            InvalCtls(fPort);
+
+        InitCursor;
+    end;
+
+    Procedure RefreshControls;
+    begin
+        If selection = folders
+        then
+            begin
+                UpdateFileList(True);
+                UpdateDirList(True);
+            end
+        else
+            begin
+                UpdateDirList(True);
+                UpdateFileList(True);
+            end;
+    end;
+
+    Function memberHighlighted(theMember    : integer;
+                               theList      : memberListPtr) : Boolean;
+    begin
+        with theList^[theMember] do
+        begin
+            If (memFlag & $c0) = $80 then
+                memberHighlighted := True
+            else
+                memberHighlighted := False;
+        end;
+    end;
+
+    Procedure MarkDirectories(markToBeSet   :   integer);
+    var
+        curEntry        :   FileRecPtr;
+        memberNumber    :   integer;
+        markJunk        :   longint;
+        oneSelected     :   Boolean;
+    begin
+        SetPort(dPort);
+        SelectWindow(dPort);
+
+        memberNumber := 1;
+        oneSelected := False;
+
+        while memberNumber <= dirListSize do
+        begin
+            If memberHighlighted(memberNumber, dirList) then
+            begin
+                selectedDir := memberNumber;
+                oneSelected := True;
+
+                curEntry := dirList^[memberNumber].memEntryPtr;
+
+                If curEntry <> Nil
+                then
+                    begin
+                        curEntry := curEntry^.NextFile;
+
+            { If there are indeed some files within the directory, then     }
+            { search down the list and include them all.                    }
+
+                        If curEntry <> Nil then
+                        begin
+                { now make sure that all files in the directory tree below  }
+                { this directory are marked.                                }
+
+                            while not EndOfLoop(currentDirectory, curEntry) do
+                            begin
+                                curEntry^.Selected := markToBeSet;
+
+                                curEntry := curEntry^.NextFile;
+                            end;
+                        end;
+                    end
+                else
+                    begin
+                        curEntry := BackupHeader.FileList;
+                        BackupHeader.Selected := markToBeSet;
+
+                        while curEntry <> Nil do
+                        begin
+                            curEntry^.Selected := markToBeSet;
+
+                            curEntry := curEntry^.NextFile;
+                        end;
+                    end;
+
+                curEntry := dirList^[memberNumber].memEntryPtr;
+
+                { ensure that all parents are marked }
+
+                If markToBeSet = included
+                then
+                    while (curEntry <> Nil) do
+                    begin
+                        curEntry^.Selected := included;
+
+                        curEntry := curEntry^.ParentDir;
+                    end
+                else
+                    while (curEntry <> Nil) do
+                    begin
+                        markJunk := directoryMark(curEntry);
+
+                        curEntry := curEntry^.ParentDir;
+                    end;
+            end;
+
+            memberNumber := memberNumber + 1;
+        end;
+
+        If oneSelected then
+        begin
+            ComputeHeaderDetails(entryMode);
+
+            If BackupHeader.NumOfFiles = 0 then
+                BackupHeader.Selected := notSelected;
+
+            RefreshDetailWindow;
+            RefreshControls;
+        end;
+    end;
+
+    Procedure includeFiles(markToBeSet   :   integer);
+    var
+        memberNumber    :   integer;
+        curEntry        :   FileRecPtr;
+        markJunk        :   longint;
+        oneSelected     :   boolean;
+    begin
+        SetPort(fPort);
+        SelectWindow(fPort);
+
+        memberNumber := 1;
+        oneSelected := False;
+
+        { we need to get the pointer to one of the members being altered, }
+        { so that we can fix the status of any parent directories after   }
+        { changing the selected members.                                  }
+        while memberNumber <= fileListSize do
+        begin
+            If memberHighlighted(memberNumber, fileList) then
+            begin
+                selectedFile := memberNumber;
+                oneSelected := True;
+
+                curEntry := fileList^[memberNumber].memEntryPtr^.ParentDir;
+
+                with fileList^[memberNumber].memEntryPtr^ do
+                    If (DirEntry.fileType <> DirectoryFile) then
+                        Selected := markToBeSet;
+            end;
+
+            memberNumber := memberNumber + 1;
+        end;
+
+            { ensure that all parents are marked }
+
+        If oneSelected then
+        begin
+            If markToBeSet = included
+            then
+                while (curEntry <> Nil) do
+                begin
+                    curEntry^.Selected := included;
+
+                    curEntry := curEntry^.ParentDir;
+                end
+            else
+                while (curEntry <> Nil) do
+                begin
+                    markJunk := directoryMark(curEntry);
+    
+                    curEntry := curEntry^.ParentDir;
+                end;
+
+            ComputeHeaderDetails(entryMode);
+            RefreshDetailWindow;
+            RefreshControls;
+        end;
+    end;
+
+    Procedure markFiles;
+    var
+        memberNumber    :   integer;
+        curEntry        :   FileRecPtr;
+        markJunk        :   longint;
+        oneSelected     :   boolean;
+    begin
+        SetPort(fPort);
+        SelectWindow(fPort);
+
+        memberNumber := 1;
+        oneSelected := False;
+
+        while memberNumber <= fileListSize do
+        begin
+            If memberHighlighted(memberNumber, fileList) then
+            begin
+                selectedFile := memberNumber;
+                oneSelected := True;
+
+            { we need to get the pointer to one of the members being altered, }
+            { so that we can fix the status of any parent directories after   }
+            { changing the selected members.                                  }
+                curEntry := fileList^[memberNumber].memEntryPtr^.ParentDir;
+
+                with fileList^[memberNumber].memEntryPtr^ do
+                    If (DirEntry.fileType <> DirectoryFile) then
+                        Selected := markedOnly;
+            end;
+
+            memberNumber := memberNumber + 1;
+        end;
+
+        If oneSelected then
+        begin
+            while (curEntry <> Nil) do
+            begin
+                markJunk := directoryMark(curEntry);
+
+                curEntry := curEntry^.ParentDir;
+            end;
+
+            ComputeHeaderDetails(entryMode);
+            RefreshDetailWindow;
+            RefreshControls;
+        end;
+    end;
+
+    Procedure HandleInclusion;
+    begin
+        if selection = folders
+        then
+            MarkDirectories(included)
+        else
+            includeFiles(included);
+    end;
+
+    Procedure HandleExclusion;
+    begin
+        if selection = folders
+        then
+            MarkDirectories(excluded)
+        else
+            includeFiles(excluded);
+    end;
+
+    Procedure HandleOpen;
+    var
+        SelectedMember  : integer;
+    begin
+        SelectedMember := EZNextMember(0, dirListItem);
+
+        If (SelectedMember <> 0) and
+           (EZNextMember(SelectedMember, dirListItem) = 0) then
+        begin
+            currentDirectory := dirList^[SelectedMember].memEntryPtr;
+
+            With currentDirectory^.FileName do
+                popupString := concat(popupString, Separator, 
+                                      copy(theString.theString, 1, theString.size));
+
+            selectedDir := 1;
+            selectedFile := 1;
+
+            UpdateDirList(False);
+            currentFiles := dirList^[1].memEntryPtr;
+            UpdateFileList(False);
+        end;
+    end;
+
+    Procedure HandleClose;
+    var
+        menuCtl         : ctlRecHndl;
+        selectedItem    : integer;
+        tmpString       : pStringPtr;
+        popupPtr        : popupCtlRecPtr;
+        itemPtr         : cStringPtr;
+        namelen         : integer;
+        selectedName    : pString;
+        entryName       : pathName;
+        curEntry        : fileRecPtr;
+        levels          : integer;
+        closeFromFolder : FileRecPtr;
+    begin
+        menuCtl := GetCtlHandleFromID(Nil, ParentMenuItem);
+        SetMenuBar(menuCtl);    { Look at the correct menu bar }
+    
+        popupPtr := popupCtlRecPtr(menuCtl^);
+    
+        with popupPtr^ do
+            selectedItem := ctlValue - popupMenuNumber;
+
+        curEntry := currentDirectory;
+
+        levels := 1;
+
+        while curEntry <> Nil do
+        begin
+            levels := levels + 1;
+            curEntry := curEntry^.ParentDir;
+        end;
+
+        levels := levels - selectedItem;
+
+        If levels > 0 then
+        begin
+            curEntry := currentDirectory;
+
+            closeFromFolder := currentDirectory;
+
+            while levels > 0 do
+            begin
+                curEntry := curEntry^.ParentDir;
+                levels := levels - 1;
+            end;
+
+            with curEntry^.FileName do
+                popupString := copy(theString.theString,1,theString.size);
+
+            currentDirectory := curEntry;
+
+            If curEntry <> Nil then
+                curEntry := curEntry^.ParentDir;
+
+            While curEntry <> Nil do                { Insert directory names   }
+            begin                                   { and separator's.         }
+                entryName := copy(curEntry^.FileName.theString.theString,
+                                  1,
+                                  curEntry^.FileName.theString.size);
+                Insert(Separator, popupString, 1);
+                Insert(entryName, popupString, 1);
+                curEntry := curEntry^.ParentDir;
+            end;
+
+            If popupString <> '' then
+                insert(Separator, popupString, 1);
+            insert(popupHeader, popupString, 1);
+
+            selectedDir := 1;
+            selectedFile := 1;
+
+            UpdateDirList(False);
+
+            selectedItem := 1;
+            while selectedItem <= dirListSize do
+            begin
+                If dirList^[selectedItem].memEntryPtr = closeFromFolder then
+                    selectedDir := selectedItem;
+
+                selectedItem := selectedItem + 1;
+            end;
+
+            EZSelectMember(selectedDir, dirListItem);
+
+            currentFiles := closeFromFolder;
+            UpdateFileList(False);
+        end;
+
+        SetMenuBar(Nil);  { Revert to the system menu bar }
+    end;
+
+    Procedure DisplayFileInfo;
+    const
+        okItem          =   100;
+    var
+        infoPort        :   grafPortPtr;
+        tmpRect         :   rect;
+        okItemPtr       :   ptr;
+        okItemHndl      :   ctlRecHndl;
+        memberNumber    :   integer;
+        curEntry        :   FileRecPtr;
+        ftptr           :   pStringPtr;
+        Date            :   DateRecord;
+        Time            :   TimeRecord;
+        tmpString       :   pString;
+        tmpText         :   packed array [1..10] of char;
+        kLength         :   longint;
+        fTypeString     :   pString;
+    begin
+        SetPort(fPort);
+        SelectWindow(fPort);
+
+        memberNumber := EZNextMember(0, fileListItem);
+
+        If memberNumber <> 0 then
+        begin
+            curEntry := fileList^[memberNumber].memEntryPtr;
+
+            if curEntry^.DirEntry.fileType <> DirectoryFile then
+            begin
+                with curEntry^ do
+                begin
+                    with dirEntry do
+                    begin
+                        ftptr := EZFileType(fileType, auxType, FTypeRecPtr);
+
+                        if ftptr = nil then
+                            ftptr := EZFileType(fileType, 0, FTypeRecPtr);
+
+                        if ftptr = nil then
+                        begin
+                            HEX(fileType, 2, tmpString);
+                            fTypeString := concat('Type $',tmpString,', subtype $');
+                            HEX(auxType, 4, tmpString);
+                            fTypeString := concat(fTypeString, tmpString);
+                            ftptr := @fTypeString;
+                        end;
+                    end;
+
+                    with tmpRect do
+                    begin
+                        h1 := 70;
+                        h2 := 569;
+                        v1 := 35;
+                        v2 := 165;
+                    end;
+
+                    infoPort := startupEZDialog(tmpRect, Nil);
+
+                    with tmpRect do
+                    begin
+                        h1 := 10;
+                        h2 := 0;
+                        v1 := 112;
+                        v2 := 0;
+                    end;
+
+                    okItemPtr := newButtonTemplate(okItem,
+                                                   TmpRect,
+                                                   1,
+                                                   0,
+                                                   0,
+                                                   @'Ok',
+                                                   Nil,
+                                                   Nil);
+
+                    okItemHndl := NewControl2(infoPort, 0, okItemPtr);
+
+                    moveTo(10,12);
+                    DrawString(@'Filename');
+                    moveTo(10,22);
+                    moveTo(200,12);
+                    DrawChar(':');
+                    moveTo(10,32);
+                    DrawString(@'File type');
+                    moveTo(200,32);
+                    DrawChar(':');
+                    moveTo(10,52);
+                    DrawString(@'Creation Date/Time');
+                    moveTo(200,52);
+                    DrawChar(':');
+                    moveTo(10,62);
+                    DrawString(@'Modification Date/Time');
+                    moveTo(200,62);
+                    DrawChar(':');
+                    moveTo(10,82);
+                    DrawString(@'Total length');
+                    moveTo(200,82);
+                    DrawChar(':');
+                    moveTo(10,102);
+                    DrawString(@'Included in saveset');
+                    moveTo(200,102);
+                    DrawChar(':');
+
+                    moveTo(220,12);
+                    DrawText(@FileName.theString.theString, FileName.theString.size);
+
+                    moveTo(220,32);
+                    DrawString(ftptr);
+
+                    moveTo(220,52);
+                    with DirEntry do
+                        ConvFileDateToDate(createDateTime,Date,Time);
+
+                    DrawString(@Date.Date);
+                    DrawString(@'   ');
+                    DrawString(@Time.Time);
+
+                    moveTo(220,62);
+                    with DirEntry do
+                        ConvFileDateToDate(modDateTime,Date,Time);
+
+                    DrawString(@Date.Date);
+                    DrawString(@'   ');
+                    DrawString(@Time.Time);
+
+                    kLength := (dirEntry.eofValue + dirEntry.resourceEOF) div 1024;
+                    if kLength = 0 then
+                        kLength := 1;
+
+                    moveTo(220,82);
+                    Long2Dec(kLength, @tmpText, 8, false);
+                    DrawText(@tmpText, 8);
+                    DrawChar('K');
+
+                    moveTo(220,102);
+                    If Selected <> notSelected
+                    then
+                        DrawString(@'Yes')
+                    else
+                        DrawString(@'No');
+
+                    DrawControls(infoPort);
+
+                    Repeat
+                        itemHit := EZDialogEvent(NumOfClicks);
+                    Until itemHit = okItem;
+
+                    CloseWindow(infoPort);
+                end;
+            end;
+        end;
+    end;
+
+    Procedure UpdateButtons;
+    var
+        thisPort    :   grafPortPtr;
+    begin
+        thisPort := FrontWindow;
+
+        If entryMode = restoreMode then
+            If thisPort = dPort
+            then
+                begin
+                    SetPort(bPort);
+                    Deactivate(MarkItem);
+                    SetPort(dPort);
+                end
+            else
+                if thisPort = fPort then
+                begin
+                    SetPort(bPort);
+                    Activate(MarkItem);
+                    SetPort(fPort);
+                end;
+
+        If thisPort = dPort
+        then
+            selection := folders
+        else
+            If thisPort = fPort then
+                selection := files;
+    end;
+
+    Procedure DisplayHelp;
+    const
+        okItem      =   100;
+    var
+        helpPort    :   grafPortPtr;
+        tmpRect     :   rect;
+        okItemPtr   :   ptr;
+        okItemHndl  :   ctlRecHndl;
+        textArray   :   packed array [1..300] of char;
+    begin
+        with tmpRect do
+        begin
+            h1 := 20;
+            h2 := 620;
+            v1 := 20;
+            v2 := 180;
+        end;
+
+        helpPort := startupEZDialog(tmpRect, Nil);
+
+        moveTo(10,10);
+        DrawString(@'In the Folders window ...');
+        moveTo(10,23);
+        DrawChar(chr(closedAppleChar));
+        DrawString(@'  -');
+        moveTo(10,43);
+        DrawChar(chr(openAppleChar));
+        DrawString(@'  -');
+        moveTo(10,63);
+        DrawChar(chr(diamondChar));
+        DrawString(@'  -');
+
+        with tmpRect do
+        begin
+            h1 := 50;
+            h2 := 280;
+            v1 := 15;
+            v2 := 34;
+        end;
+
+        textArray := concat('All files in the folder have been included.');
+
+        LETextBox2(@textArray,
+                   length(textArray),
+                   tmpRect,
+                   leJustFill);
+
+        with tmpRect do
+        begin
+            v1 := 35;
+            v2 := 54;
+        end;
+
+        textArray := concat('Some of the files in the folder have been ',
+                            'marked or included.');
+
+        LETextBox2(@textArray,
+                   length(textArray),
+                   tmpRect,
+                   leJustFill);
+
+        with tmpRect do
+        begin
+            v1 := 55;
+            v2 := 84;
+        end;
+
+        textArray := concat('Some of the files in the folder have been ',
+                            'marked, but the folder itself is not included.');
+
+        LETextBox2(@textArray,
+                   length(textArray),
+                   tmpRect,
+                   leJustFill);
+
+        moveTo(10,95);
+        DrawString(@'In the Files window ...');
+
+        moveTo(10,108);
+        DrawChar(chr(tickChar));
+        DrawString(@'  -');
+        moveTo(10,118);
+        DrawChar(chr(deltaChar));
+        DrawString(@'  -');
+
+        with tmpRect do
+        begin
+            v1 := 100;
+            v2 := 109;
+        end;
+
+        textArray := concat('The file has been included.');
+
+        LETextBox2(@textArray,
+                   length(textArray),
+                   tmpRect,
+                   leJustFill);
+
+        with tmpRect do
+        begin
+            v1 := 110;
+            v2 := 139;
+        end;
+
+        textArray := concat('The file has been marked, but the folder that ',
+                            'holds it has not been included.');
+
+        LETextBox2(@textArray,
+                   length(textArray),
+                   tmpRect,
+                   leJustFill);
+
+        moveTo(300,10);
+        DrawString(@'The buttons ...');
+
+        moveTo(300,23);
+        DrawString(@'Ok');
+
+        with tmpRect do
+        begin
+            h1 := 370;
+            h2 := 590;
+            v1 := 15;
+            v2 := 34;
+        end;
+
+        textArray := concat('Will accept the current file selection.');
+
+        LETextBox2(@textArray,
+                   length(textArray),
+                   tmpRect,
+                   leJustFill);
+
+        moveTo(300,43);
+        DrawString(@'File Info');
+
+        with tmpRect do
+        begin
+            v1 := 35;
+            v2 := 54;
+        end;
+
+        textArray := 'Will show information on the specified file.';
+
+        LETextBox2(@textArray,
+                   length(textArray),
+                   tmpRect,
+                   leJustFill);
+
+        moveTo(300,63);
+        DrawString(@'Include');
+
+        with tmpRect do
+        begin
+            v1 := 55;
+            v2 := 74;
+        end;
+
+        textArray := concat('Will INCLUDE all selected files/folders.');
+
+        LETextBox2(@textArray,
+                   length(textArray),
+                   tmpRect,
+                   leJustFill);
+
+        moveTo(300,83);
+        DrawString(@'Exclude');
+
+        with tmpRect do
+        begin
+            v1 := 75;
+            v2 := 94;
+        end;
+
+        textArray := concat('Will EXCLUDE all selected files/folders.');
+
+        LETextBox2(@textArray,
+                   length(textArray),
+                   tmpRect,
+                   leJustFill);
+
+        moveTo(300,103);
+        DrawString(@'Mark');
+
+        with tmpRect do
+        begin
+            v1 := 95;
+            v2 := 124;
+        end;
+
+        textArray := concat('Will MARK all selected files to be placed at ',
+                            'the top level of the restoration area.');
+
+        LETextBox2(@textArray,
+                   length(textArray),
+                   tmpRect,
+                   leJustFill);
+
+        moveTo(300,133);
+        DrawString(@'Help');
+
+        with tmpRect do
+        begin
+            v1 := 125;
+            v2 := 134;
+        end;
+
+        textArray := concat('Displays this help window.');
+
+        LETextBox2(@textArray,
+                   length(textArray),
+                   tmpRect,
+                   leJustFill);
+
+        with tmpRect do
+        begin
+            h1 := 10;
+            h2 := 0;
+            v1 := 141;
+            v2 := 0;
+        end;
+
+        okItemPtr := newButtonTemplate(okItem,
+                                       TmpRect,
+                                       1,
+                                       0,
+                                       0,
+                                       @'Ok',
+                                       Nil,
+                                       Nil);
+
+        okItemHndl := NewControl2(helpPort, 0, okItemPtr);
+
+        DrawControls(helpPort);
+
+        Repeat
+            itemHit := EZDialogEvent(NumOfClicks);
+        Until itemHit = okItem;
+
+        CloseWindow(helpPort);
+    end;
+
+    Procedure ShowDirectory;
+    var
+        selectedMember  :   integer;
+    begin
+        selectedMember := EZNextMember(0, dirListItem);
+
+        If (selectedMember <> 0) and
+           (selectedMember <> selectedDir) and
+           (EZNextMember(selectedMember, dirListItem) = 0) then
+        begin
+            currentFiles := dirList^[selectedMember].memEntryPtr;
+            selectedFile := 1;
+            selectedDir := selectedMember;
+            UpdateFileList(False);
+            SelectWindow(DPort);
+        end;
+    end;
+
+    Procedure HandleListItem;
+    begin
+        case editEvent.ClickCount of
+            1   :   ShowDirectory;
+            2   :   HandleOpen;
+            otherwise ;
+        end;
+    end;
+
+    Procedure AlterFilesDisplay;
+    begin
+        displayDimmedDirs := CheckBoxOn(fModeItem);
+
+        selectedFile := 1;
+        UpdateFileList(False);
+    end;
+begin
+    ObtainEditBuffer;
+
+    If EditBuffer = Nil
+    then
+        begin
+            Msg := concat('42:There is not enough memory available to edit ',
+                          'the file list.  Would you like to select all files ',
+                          'in the saveset or abort the backup?',
+                          ':^Select All:Abort');
+
+            buttonPressed := AlertWindow(0,Nil,@Msg);
+
+            If buttonPressed = 0
+            then
+                SelectAllFiles
+            else
+                UserAbort := True;
+        end
+    else
+        begin
+            If entryMode <> viewMode then
+            begin
+                HideWindow(currentPort);
+                hiddenPort := currentPort;
+            end;
+
+            InitLists;
+
+            ComputeHeaderDetails(entryMode);
+
+            SetupBPort;
+
+            currentDirectory := Nil;
+
+            SetupDPort;
+            SetupFPort;
+
+            itemHit := 0;
+ 
+            Repeat
+                If Not UserAbort then
+                    itemHit := EZAnyEvent(editEvent, eventHandled, False);
+
+                If eventHandled
+                then
+                    case ord(itemHit) of
+                        IncludeItem     :   HandleInclusion;
+                        ExcludeItem     :   HandleExclusion;
+                        dirListItem     :   HandleListItem;
+                        ParentMenuItem  :   HandleClose;
+                        InfoItem        :   if fileListSize > 0 then
+                                                DisplayFileInfo;
+                        MarkItem        :   If selection = files then
+                                                MarkFiles;
+                        HelpItem        :   DisplayHelp;
+                        fModeItem       :   AlterFilesDisplay;
+                        otherwise       :   ;
+                    end
+                else
+                    case ord(itemHit) of
+                        activateEvt     :   UpdateButtons;
+                        otherwise       :   ;
+                    end;
+
+            Until eventHandled and
+                  (itemHit = OkItem);
+
+            EZDisposePopUp(dirPopupTemplate);
+
+            DisposeLists;
+
+            If entryMode <> viewMode then
+            begin
+                currentPort := hiddenPort;
+                ShowWindow(currentPort);
+                SelectWindow(currentPort);
+            end;
+
+            CloseWindow(bPort);
+            CloseWindow(dPort);
+            CloseWindow(fPort);
+
+            DisposeHandle(EditBufferHandle);
+        end;
+end;
+
+end.

@@ -1,0 +1,1 @@
+linkiigs obj/backup.root obj/backup.a -lib obj/backuplib -lib 13/ezlib -lib 13/paslib -lib 13/syslib -o obj/ezbackup

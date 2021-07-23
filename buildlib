@@ -1,0 +1,22 @@
+delete obj/backuplib
+makelib obj/backuplib +obj/backevent.a
+makelib obj/backuplib +obj/backpref.a
+makelib obj/backuplib +obj/backasm.a
+makelib obj/backuplib +obj/backback.a
+makelib obj/backuplib +obj/backbad.a
+makelib obj/backuplib +obj/backbufr.a
+makelib obj/backuplib +obj/backcat.a
+makelib obj/backuplib +obj/backdata.a
+makelib obj/backuplib +obj/backdisk.a
+makelib obj/backuplib +obj/backedit.a
+makelib obj/backuplib +obj/backinit.a
+makelib obj/backuplib +obj/backlist.a
+makelib obj/backuplib +obj/backlow.a
+makelib obj/backuplib +obj/backmenu.a
+makelib obj/backuplib +obj/backmisc.a
+makelib obj/backuplib +obj/backread.a
+makelib obj/backuplib +obj/backrest.a
+makelib obj/backuplib +obj/backsave.a
+makelib obj/backuplib +obj/backwrite.a
+makelib obj/backuplib +obj/backcopy.root
+makelib obj/backuplib +obj/backcopy.a

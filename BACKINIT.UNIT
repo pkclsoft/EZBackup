@@ -1,0 +1,239 @@
+{$ keep 'obj/Backinit' }
+Unit Backinit;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata, Backmisc, Backpref;
+
+Procedure StartUp;
+
+Procedure ShutDown;
+
+implementation
+
+{$ segment 'MainEntry'          }
+
+Const
+{$ copy 'BackTConst.Inc' }
+
+Procedure BETAMessage;
+var
+    Msg  : packed array [1..300] of char;
+    Junk : Integer;
+begin
+    Msg := concat('73:Please note that this is a BETA version of the software, ',
+                  'and that it is supplied as a demonstration only, and as ',
+                  'such, it should NOT be distributed without prior permission ',
+                  'of the author.:^#0');
+    Junk := AlertWindow(0,Nil,@Msg);
+end;
+ 
+Procedure StartMenus;
+{ Will initialise all of the menus to appear in the menu bar. }
+var
+    Height       : Integer;
+    MenuHand     : MenuHandle;
+    MenuString   : TextPtr;
+begin
+     new(MenuString);
+     MenuString^ := concat('>>   Special \N5', chr(Return));
+     MenuString^ := concat(MenuString^, '--Initialise/Erase ...\N602', chr(Return));
+     MenuString^ := concat(MenuString^, '.',chr(Return));
+     MenuHand    := NewMenu(MenuString);
+     InsertMenu(MenuHand,0);
+ 
+     new(MenuString);
+     MenuString^ := concat('>>   Edit \N2', chr(Return));
+     MenuString^ := concat(MenuString^, '--Undo\N250V*Zz', chr(Return));
+     MenuString^ := concat(MenuString^, '--Cut\N251*Xx', chr(Return));
+     MenuString^ := concat(MenuString^, '--Copy\N252*Cc', chr(Return));
+     MenuString^ := concat(MenuString^, '--Paste\N253*Vv', chr(Return));
+     MenuString^ := concat(MenuString^, '--Clear\N254', chr(Return));
+     MenuString^ := concat(MenuString^, '.',chr(Return));
+     MenuHand    := NewMenu(MenuString);
+     InsertMenu(MenuHand,0);
+ 
+     new(MenuString);
+     MenuString^ := concat('>>   File \N1', chr(Return));
+     MenuString^ := concat(MenuString^, '--Backup ...\N301*Bb', chr(Return));
+(*     MenuString^ := concat(MenuString^, '--Add To Backup ...\N302*Bb', chr(Return)); *)
+     MenuString^ := concat(MenuString^, '---\N302D', chr(Return));
+     MenuString^ := concat(MenuString^, '--Restore ...\N303*Rr', chr(Return));
+     MenuString^ := concat(MenuString^, '--Catalog ...\N304*Kk', chr(Return));
+     MenuString^ := concat(MenuString^, '---\N305D', chr(Return));
+     MenuString^ := concat(MenuString^, '--Preferences ...\N306*Pp', chr(Return));
+     MenuString^ := concat(MenuString^, '---\N307D', chr(Return));
+     MenuString^ := concat(MenuString^, '--Quit\N308*Qq', chr(Return));
+     MenuString^ := concat(MenuString^, '.', chr(Return));
+     MenuHand    := NewMenu(MenuString);
+     InsertMenu(MenuHand,0);
+ 
+     new(MenuString);
+     MenuString^ := concat('>>@\XN0', chr(Return));
+     MenuString^ := concat(MenuString^, '--About BackUp ...\N257*?/',chr(Return));
+     MenuString^ := concat(MenuString^, '--Shareware notice ...\N258V*Ss/',chr(Return));
+     MenuString^ := concat(MenuString^, '.',chr(Return));
+     MenuHand    := NewMenu(MenuString);
+     InsertMenu(MenuHand,0);
+     FixAppleMenu(0);
+ 
+     Height := FixMenuBar;
+     DrawMenuBar;
+end;
+
+Procedure SaveSystemPrefix;
+var
+    prefixParams    :   getPrefixOSDCB;
+begin
+    SystemPrefix.maxSize := GSOSNameLength + 4;
+
+    With PrefixParams do
+    begin
+        pcount := 2;
+        prefixNum := 0;
+        prefix := @SystemPrefix;
+    end;
+ 
+    GetPrefixGS(prefixParams);
+end;
+
+Procedure openMyResourceFile;
+var
+    ApplicationName         :   GSOSOutString;
+    getNameParms            :   getNameOSDCB;
+    myResourceFile          :   integer;
+    mapAddress              :   ^resHeaderRec;
+begin
+    ApplicationName.maxSize := GSOSNameLength + 4;
+    getNameParms.pcount := 1;
+    getNameParms.dataBuffer := @ApplicationName;
+    GetNameGS(getNameParms);
+
+    insert('1:',ApplicationName.theString.theString,1);
+    ApplicationName.theString.size := ApplicationName.theString.size + 2;
+        
+    UserAbort := MountVolume(ApplicationName.theString);
+
+    If not UserAbort then
+    begin
+        preferencesSaveable := True;
+
+        If GetCurResourceFile <> 1 then
+            CloseResourceFile(GetCurResourceFile);
+
+        mapAddress := Nil;
+
+        myResourceFile := OpenResourcefile((readEnableMask | writeEnableMask),
+                                           mapAddress^,
+                                           ApplicationName.theString);
+
+        If ToolError <> 0 then
+        begin
+            myResourceFile := OpenResourcefile(readEnableMask,
+                                               mapAddress^,
+                                               ApplicationName.theString);
+            preferencesSaveable := False;
+        end;
+    end;
+end;
+
+Procedure StartUp;
+{ Start up everything we need for the program to run. }
+var
+    Msg             :   textBlock;
+    AlertJunk       :   integer;
+
+    major           :   longint;
+    minor           :   longint;
+    prototype       :   boolean;
+
+    versionParms    :   osVersionOSDCB;
+begin
+    versionParms.pcount := 1;
+    GetVersionGS(versionParms);
+
+    with versionParms do
+    begin
+        major := (version & $7f00) >> 8;
+        minor := (version & $00ff);
+        If (version & $8000) <> 0
+        then
+            prototype := True
+        else
+            prototype := False;
+    end;
+
+    If (major < 5) or
+       ((major >= 5) and
+        (minor >= 2))
+    then
+        begin
+            CompactMem;
+
+            BackupStartStopRecord := EZStartDesk(mode640);
+
+            openMyResourceFile;
+
+            If not UserAbort then
+            begin
+                redPatternHandle := patternHandle(LoadResource(rListPattern, 2));
+                yellowPatternHandle := patternHandle(LoadResource(rListPattern, 3));
+
+                getPreferences;
+                setPreferences;
+
+                FTypeRecPtr := EZLoadFTypeFiles;
+
+(*                EZInitDebugFile; *)
+
+                SaveSystemPrefix;
+                StartMenus;
+                InitCursor;
+                UserAbort := False;
+            end;
+
+            BadVersion := False;
+        end
+    else
+        begin
+            UserAbort := True;
+            BadVersion := True;
+        end;
+end;
+
+Procedure ResetSystemPrefix;
+var
+    PrefixParams        : getPrefixOSDCB;
+begin
+    With PrefixParams do
+    begin
+        pcount := 2;
+        prefixNum := 0;
+        prefix := @SystemPrefix.theString;
+    end;
+ 
+    SetPrefixGS(PrefixParams);
+end;
+
+Procedure ShutDown;
+{ Shut down everything. }
+begin
+    ResetSystemPrefix;
+
+    EZDisposeFTypeFiles(FTypeRecPtr);
+
+    CloseResourceFile(ResourceFileID);
+
+    EZEndDesk(BackupStartStopRecord);
+end;
+
+end.

@@ -1,0 +1,575 @@
+{$ keep 'obj/Backlist' }
+Unit Backlist;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata, Backmisc;
+
+Function GetFileList(Incremental    : Boolean;
+                     selectFile     : Integer) : Boolean;
+
+Procedure ComputeHeaderDetails(entryMode    :   integer);
+
+implementation
+
+{$ segment 'Miscel02'           }
+
+Const
+{$ copy 'BackTConst.Inc' }
+
+Procedure RefreshMsgBox;
+var
+    tmpRect     :   rect;
+    origString  :   pString;
+    fixedString :   pString;
+begin
+    moveTo(10,14);
+    DrawString(@'Getting file list, please wait ...');
+    moveTo(10,34);
+    DrawString(@'Scanning directory ');
+ 
+    with tmpRect do
+    begin
+        h1 := 155;
+        h2 := 420;
+        v1 := 24;
+        v2 := 35;
+    end;
+
+    SetSolidPenPat(15);
+    PaintRect(tmpRect);
+
+    origString := copy(refreshPathName.theString, 1, refreshPathName.size);
+
+    EZFixStringToRect(tmpRect, origString, fixedString, addToStart);
+
+    moveTo(155,34);
+    DrawString(@fixedString);
+end;
+
+Function GetFileList;
+var
+    Junk        : FileRecPtr;
+    tmpRect     : rect;
+    MsgBox      : grafPortPtr;
+    ErrorCode   : Integer;
+    ErrText     : textBlock;
+    AlertJunk   : Integer;
+    CloseParams : closeOSDCB;
+    entryNumber : integer;
+
+    curEntry    : FileRecPtr;
+    prevEntry   : FileRecPtr;
+    
+    seconds     : longint;
+ 
+    Function GetDirList(    Dir        : GSOSInString;
+                            Increm     : Boolean;
+                            Parent     : FileRecPtr;
+                        var startEntry : FileRecPtr) : FileRecPtr;
+    var
+        OpenParams          :   openOSDCB;
+
+        theDirEntry         :   dirEntryOSDCB;
+        theOptionListLength :   integer;
+
+        theDirEntryName     :   FilenameString;
+        nextDirName         :   GSOSInString;
+        tmpCString          :   packed array [1..508] of char;
+
+        EmptyOptionList     :   EmptyOptionListType;
+
+        curEntry            :   FileRecPtr;
+        nextEntry           :   FileRecPtr;
+        savedEntry          :   FileRecPtr;
+        previousEntry       :   FileRecPtr;
+        offset              :   longint;
+
+        ErrCode             :   integer;
+
+        Msg                 :   textBlock;
+        Junk                :   Integer;
+
+        Function FileWanted : Boolean;
+        begin
+            With theDirEntry do
+            begin
+                If fileType = BadBlocksfile
+                then
+                    FileWanted := False
+                else
+                    If not Increm
+                    then
+                        FileWanted := True
+                    else
+                        If ((access & backupNeededMask) <> 0) or
+                           (fileType = DirectoryFile)
+                        then
+                            FileWanted := True
+                        else
+                            FileWanted := False;
+            end;
+        end;
+
+        Procedure GetDirEntry;
+        var
+            oListLengthPtr  :   IntegerPtr;
+
+            TrueOptionList      : ptr;
+        begin
+            with EmptyOptionList do
+            begin
+                inputLength := $0004;
+                outputLength := $0000;
+            end;
+ 
+            With theDirEntry do
+            begin
+                pcount := 17;
+                refNum := OpenParams.refNum;
+                base := gdeBaseAddDisplacement;
+                displacement := 1;
+                name := @theDirEntryName;
+                optionList := @EmptyOptionList;
+            end;
+
+            theDirEntryName.maxSize := FileNameLength + 4;
+            theDirEntryName.theString.size := 0;
+            theDirEntryName.theString.theString := '';
+     
+            GetDirEntryGS(theDirEntry);
+            ErrCode := ToolError;
+ 
+            { If the file system is something other than ProDOS, and the file }
+            { has an option list, then get the option list.                   }
+ 
+            If (ErrCode = $4f)
+            then
+                with theDirEntry do
+                begin
+                    If (fileSysID <> fsProDOS) and FileWanted
+                    then
+                        begin
+                            theOptionListLength := EmptyOptionList.outputLength + 4;
+                            TrueOptionList := EZNew(theOptionListLength);
+                            oListLengthPtr := integerPtr(TrueOptionList);
+                            oListLengthPtr^ := theOptionListLength;
+                            optionList := Pointer(TrueOptionList);
+                        end
+                    else
+                        begin
+                            theOptionListLength := 0;
+                            optionList := Nil;
+                        end;
+ 
+                    { Ensure that we retrieve the same directory entry again. }
+                    { Note that we don't do this for Appleshare, due to some  }
+                    { bug in the FST.                                         }
+                    If (fileSysID <> fsAppleShare) then
+                        displacement := 0;
+ 
+                    GetDirEntryGS(theDirEntry);
+                    ErrCode := ToolError;
+                end
+            else
+                begin
+                    theDirEntry.optionList := Nil;
+                    theOptionListLength := 0;
+                end;
+        end;
+                
+    begin
+        ErrCode := ErrorCode;
+
+        refreshPathName := Dir;
+        RefreshMsgBox;
+ 
+        With OpenParams do
+        begin
+            pcount := 3;
+            pathname := @Dir;
+            requestAccess := readEnableMask;
+        end;
+ 
+        OpenGS(OpenParams);
+        ErrCode := ToolError;
+
+        curEntry := startEntry;
+
+        While (ErrCode = 0) and
+              (not UserAbort) do
+        begin
+            GetDirEntry;
+
+            If FileWanted   and
+               (ErrCode = 0) then
+            begin
+                With BackupHeader do
+                begin
+                    offset := ord4(ord4(BackupHeader.NumOfFiles) *
+                                   ord4(FileRecordLength));
+                    nextEntry := Pointer(ord4(ListArea) + offset);
+
+                    If offset >= ListBufferSize then
+                    begin
+                        Msg := concat('42:There is not enough memory available to contain ',
+                                      'the file list.:^#0');
+
+                        Junk := AlertWindow(0,Nil,@Msg);
+
+                        UserAbort := True;
+                    end;
+
+                    NumOfFiles := NumOfFiles + 1;
+                end;
+
+                If not UserAbort then
+                begin
+                    If curEntry = Nil { this is the first record in the list }
+                    then
+                        begin
+                            previousEntry := curEntry;
+                            startEntry := nextEntry;
+                            curEntry := startEntry;
+                        end
+                    else
+                        begin
+                            previousEntry := curEntry;
+                            curEntry^.NextFile := nextEntry;
+                            curEntry := curEntry^.NextFile;
+                        end;
+
+                    with curEntry^ do
+                    begin
+                        NextFile := Nil;
+                        DirEntry := theDirEntry;
+                        ParentDir := Parent;
+                        FileName := theDirEntryName;
+                        Selected := selectFile;
+                        OptionListLength := theOptionListLength;
+
+                        If DirEntry.fileType = DirectoryFile then
+                        begin
+                            tmpCString := concat(copy(Dir.theString,1,Dir.size),
+                                                 Separator,
+                                                 copy(FileName.theString.theString,1,FileName.theString.size));
+ 
+                            nextDirName.theString := copy(tmpCString, 1, length(tmpCString));
+                            nextDirName.size := length(tmpCString);
+
+                            ThisDir := curEntry;
+                            savedEntry := curEntry;
+
+                            curEntry := GetDirList(nextDirName,
+                                                   Increm,
+                                                   curEntry,
+                                                   curEntry);
+
+                            If curEntry = savedEntry then
+                            begin
+                                with BackupHeader do
+                                    NumOfFiles := NumOfFiles - 1;
+
+                                curEntry := previousEntry;
+                                curEntry^.nextFile := Nil;
+                            end;
+
+                            ErrCode := ErrorCode;
+                        end;
+                    end;
+                end;
+            end;
+        end;
+
+        With CloseParams do
+        begin
+            pcount := 1;
+            refNum := OpenParams.refNum;
+        end;
+
+        If (ErrCode = 0) or
+           (ErrCode = $61)
+        then
+            begin
+                CloseGS(CloseParams);
+                ErrCode := ToolError;
+            end
+        else
+            If ErrCode = $4e
+            then
+                begin
+                    ErrText := concat('64',chr(Return),
+                                      'The file "', copy(Dir.theString,1,Dir.size),
+                                      '" cannot be retrieved from the selected ',
+                                      'volume.  Please select your course of action.',
+                                      chr(Return),'^#6',chr(Return),'#1 Backup');
+
+                    If AlertWindow($0001,Nil,@ErrText) = 1 then
+                        ErrCode := 0;
+
+                    ErrorCode := ErrCode;
+                end
+            else
+                ErrorCode := ErrCode;
+ 
+        GetDirList := curEntry;
+    end;
+
+begin
+    With BackupHeader do
+    begin
+        seconds := GetSysDate;
+        ConvSecondsToP8(seconds, BackupDate, BackupTime);
+        NumOfFiles := 0;
+        FileList := Nil;
+        BackupLength := 0;
+        BckMajorRelease := MajorRelease;
+        BckMinorRelease := MinorRelease;
+    end;
+ 
+    NumOfDisks := 0;
+ 
+    ErrorCode := 0;
+
+    with tmpRect do
+    begin
+        h1 := 110;
+        h2 := 530;
+        v1 := 80;
+        v2 := 120;
+    end;
+
+    ObtainListBuffer;
+
+    If not UserAbort
+    then
+        begin
+            WaitCursor;
+
+            MsgBox := startupEZDialog(tmpRect, @RefreshMsgBox);
+
+            With BackupHeader do
+            begin
+                refreshPathName := RootDirName;
+
+                Junk := GetDirList(RootDirName,
+                                   Incremental,
+                                   Nil,            { Root directory parent is Nil }
+                                   FileList);
+            end;
+
+            CloseWindow(MsgBox);
+ 
+            InitCursor;
+
+            If not UserAbort then
+            begin
+                If (ErrorCode <> 0) and (ErrorCode <> $4e)
+                then
+                    begin
+                        CloseParams.pCount := 1;
+                        CloseParams.refNum := 0;
+                        CloseGS(CloseParams);
+
+                        ErrText := concat('An error has ocurred ',
+                                          'while getting the file ',
+                                          'list.  Aborting backup.');
+ 
+                        UserAbort := ProdosError(ErrorCode, ErrText, True);
+ 
+                        DeleteFileList;
+
+                        GetFileList := True;
+                    end
+                else
+                    If BackupHeader.NumOfFiles = 0
+                    then
+                        begin
+                            ErrText := concat('33:',
+                                              'There are no files in the saveset ',
+                                              'area that require backing up.:^#0');
+ 
+                            AlertJunk := AlertWindow($0001,Nil,@ErrText);
+
+                            DeleteFileList;
+
+                            GetFileList := True;
+                        end
+                    else
+                        begin
+                            GetFileList := False;
+                            SetHandleSize(ord4(ord4(BackupHeader.NumOfFiles) *
+                                               ord4(FileRecordLength)),
+                                          ListBufferHandle);
+                            ListBufferSize := ord4(ord4(BackupHeader.NumOfFiles) *
+                                                   ord4(FileRecordLength));
+                        end;
+            end;
+        end
+    else
+        begin
+            UserAbort := False;
+            GetFileList := True;
+            DisposeHandle(ListBufferHandle);
+        end;
+end;
+
+Procedure ComputeHeaderDetails;
+const
+  RecordEntryLength     =   FileRecordLength;
+  HeaderLength          =   1024;
+
+  backupMode            =   0;
+  restoreMode           =   1;
+  viewMode              =   2;
+  specialMode           =   3;
+var
+  curEntry              :   FileRecPtr;
+
+  Function CountFiles   :   integer;
+  var
+    counter :   integer;
+  begin
+    curEntry := BackupHeader.FileList;
+    counter := 0;
+
+    while curEntry <> Nil do
+    begin
+        If curEntry^.Selected <> notSelected then
+            counter := counter + 1;
+
+        curEntry := curEntry^.NextFile;
+    end;
+
+    CountFiles := counter;
+  end;
+begin
+  With BackupHeader do
+  begin
+    If entryMode = specialMode then
+      BackupLength := DirectoryLength;
+
+    NumOfFiles := CountFiles;
+
+    DirectoryLength := ord4(HeaderLength) + ord4(NumOfFiles) * 
+                                            ord4(RecordEntryLength);
+    If (DirectoryLength mod ord4(BlockByteCount)) <> 0 then
+      DirectoryLength := DirectoryLength + (ord4(BlockByteCount) -
+                         (DirectoryLength mod ord4(BlockByteCount)));
+ 
+    If SavesetLocation.DestType = 0 { disk }
+    then
+      BackupLength := 0
+    else
+      If entryMode <> specialMode then
+        BackupLength := DirectoryLength;
+
+    curEntry := FileList;
+ 
+    While curEntry <> Nil do
+    begin
+      With curEntry^ do
+      begin
+        If Selected <> notSelected then
+        begin
+          If DirEntry.fileType <> DirectoryFile then
+          { Directory files have no data component that we save.         }
+          begin
+            If entryMode = backupMode then
+              DataOffset := BackupLength;
+
+            If DirEntry.eofValue <> 0 then
+            begin
+              BackupLength := BackupLength + (DirEntry.eofValue +
+                                              (ord4(BlockByteCount) -
+                                               (DirEntry.eofValue mod
+                                                ord4(BlockByteCount))));
+
+              If (DirEntry.eofValue mod ord4(BlockByteCount)) = 0 then
+                BackupLength := BackupLength - ord4(BlockByteCount)
+            end;
+
+            If (DirEntry.flags & ffExtendedFileMask) <> 0
+            then
+              begin
+                If entryMode = backupMode then
+                  ResourceOffset := BackupLength;
+
+                If DirEntry.resourceEof <> 0
+                then
+                  begin
+                    BackupLength := BackupLength + (DirEntry.resourceEof +
+                                                    (ord4(BlockByteCount) -
+                                                     (DirEntry.resourceEof mod
+                                                      ord4(BlockByteCount))));
+                    If (DirEntry.resourceEof mod ord4(BlockByteCount)) = 0 then
+                      BackupLength := BackupLength - ord4(BlockByteCount);
+                  end
+                else
+                  If entryMode = backupMode then
+                    ResourceOffset := 0;
+              end
+            else
+              ResourceOffset := 0;
+ 
+            If (DirEntry.optionList <> Nil)
+            then
+              begin
+                If entryMode = backupMode then
+                  OptionListOffset := BackupLength;
+
+                If OptionListLength <> 0
+                then
+                  begin
+                    BackupLength := BackupLength + (ord4(OptionListLength) +
+                                                    (ord4(BlockByteCount) -
+                                                     (ord4(OptionListLength) mod
+                                                      ord4(BlockByteCount))));
+                    If ord4(OptionListLength) mod ord4(BlockByteCount) = 0 then
+                      BackupLength := BackupLength - ord4(BlockByteCount);
+                  end
+                else
+                  If entryMode = backupMode then
+                    OptionListOffset := 0;
+              end
+            else
+              If entryMode = backupMode then
+                OptionListOffset := 0;
+          end;
+
+          If DirEntry.fileType = DirectoryFile then
+          begin
+            DirEntry.eofValue := 0;
+            DirEntry.resourceEof := 0;
+            OptionListLength := 0;
+          end;
+        end;
+      end;
+
+      curEntry := curEntry^.NextFile;
+    end;
+
+    With SavesetLocation do
+    begin
+      If (DestType = 0) and
+         (entryMode = backupMode) then
+      begin
+        TotalDisks := BackupLength div (ord4(UsedBlocks) * ord4(BlockByteCount));
+        If (TotalDisks * (ord4(UsedBlocks) * ord4(BlockByteCount))) <
+           ord4(BackupLength) then
+          TotalDisks := TotalDisks + 1;
+      end;
+    end;
+  end;
+end;
+
+end.

@@ -1,0 +1,281 @@
+{$ keep 'obj/Backcat' }
+Unit Backcat;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata, Backmisc, Backlow, Backsave, Backread, Backedit;
+
+Function CatalogParametersSet : Boolean;
+
+Procedure catalogSaveset;
+
+implementation
+
+{$ segment 'Restore'            }
+
+Procedure RefreshCatalogParms;
+begin
+    SetForeColor(0);
+    SetBackColor(3);
+ 
+    MoveTo(11,10);
+    DrawString(@'Catalog a saveset from');
+
+    DrawControls(currentPort);
+end;
+
+Function CatalogParametersSet;
+const
+    OkItem              = 1;
+    CancelItem          = 2;
+    deviceListItem      = 3;
+    NullItem            = 4;
+
+var
+    BPPort              : grafPortPtr;
+
+    itemHit             : longint;
+    NumOfClicks         : integer;
+
+    TmpRect             : rect;
+
+    ctlList             : array [1..NullItem] of ptr;
+
+    NewControl2Junk     : ctlRecHndl;
+    ValidJunk           : Boolean;
+
+    currentMember       : integer;
+
+    deviceList          : devMemberList;
+    numOfDevices        : integer;
+
+    Msg                 : packed array [1..150] of char;
+    Junk                : Integer;
+
+    Procedure SelectOutputDevice;
+    var
+        DeviceName      :   GSOSOutString;
+        Count           :   Integer;
+        SelectedMember  :   Integer;
+    begin
+        SelectedMember := EZNextMember(0,deviceListItem);
+
+        If SelectedMember = 0
+        then
+            itemHit := 0
+        else
+            with deviceList[SelectedMember], SavesetLocation do
+            begin
+                deviceType := ord(memDevice);
+
+                If deviceType <> -1 then
+                begin
+                    deviceNum := EZNextDevice(0, ord(memDevice));
+
+                    Device.maxSize := GSOSNameLength + 4;
+ 
+                    With DeviceDescr do
+                    begin
+                        pcount := 8;
+                        devNum := DeviceNum;
+                        devName := @Device;
+                    end;
+ 
+                    DInfoGS(DeviceDescr);
+                end;
+ 
+                case ord(memDevice) of
+                    -1                  :   DestType := 1;
+                    AppletalkFileServer :   If not SetupFileServer(ord(memDevice))
+                                            then
+                                                itemHit := 0;
+                    otherwise           :   DestType := 0;
+                end;
+
+                If (DestType = 0) and (itemHit <> 0) then
+                begin
+                    Count := ord(DeviceDescr.totalBlocks div 4096);
+                    If (Count * 4096) < DeviceDescr.totalBlocks then
+                        Count := Count + 1;
+                    FirstBlock := Count + 6;
+ 
+                    UsedBlocks := ord(ord4(DeviceDescr.totalBlocks) -
+                                          ord4(FirstBlock));
+                end;
+            end;                
+    end;
+
+begin
+    With TmpRect do
+    begin
+        h1 := 190;
+        v1 := 28;
+        h2 := h1 + 260;
+        v2 := 155;
+    end;
+
+    BPPort := startupEZDialog(TmpRect,
+                              @RefreshCatalogParms);
+    currentPort := BPPort;
+    SetPort(BPPort);
+
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 102;
+        h2 := 0;
+        v2 := 0;
+    end;
+
+    ctlList[OkItem] := newButtonTemplate(OkItem,
+                                         TmpRect,
+                                         1,
+                                         0,
+                                         0,
+                                         @' Ok ',
+                                         Nil,
+                                         Nil);
+ 
+    with TmpRect do
+    begin
+        h1 := 173;
+        v1 := 102;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[CancelItem] := newButtonTemplate(CancelItem,
+                                             TmpRect,
+                                             0,
+                                             0,
+                                             0,
+                                             @'Cancel',
+                                             Nil,
+                                             Nil);
+
+    numOfDevices := EZGetDeviceTypeList(@deviceList,
+                                        ord4(dcmBlockDevice + dcmRemovableMedia),
+                                        ord4(dcmBlockDevice + dcmRemovableMedia));
+
+    numOfDevices := numOfDevices + 1;
+    with deviceList[numOfDevices] do
+    begin
+        memPtr := @'A GS/OS file.';
+        memFlag := 0;
+        memDevice := -1;
+        memValue := EZDeviceIcon(0);
+    end;
+
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 14;
+        h2 := 226;
+        v2 := 96;
+    end;
+ 
+    ctlList[deviceListItem] := newListTemplate(deviceListItem,
+                                               TmpRect,
+                                               0,
+                                               0,
+                                               0,
+                                               numOfDevices,
+                                               8,
+                                               2,
+                                               1,
+                                               @EZDrawMember,
+                                               10,
+                                               13,
+                                               @deviceList,
+                                               Nil);
+
+    ctlList[NullItem] := Nil;
+ 
+    NewControl2Junk := NewControl2(BPPort,
+                                   3,
+                                   @ctlList[1]);
+ 
+    EZSortList(deviceListItem);
+    EZSelectMember(1, deviceListItem);
+    CurrentMember := 0;
+
+    itemHit := 0;
+ 
+    Repeat
+        If Not UserAbort then
+            itemHit := EZDialogEvent(NumOfClicks);
+ 
+        Case ord(itemHit) of
+            CancelItem      :   UserAbort := True;
+            deviceListItem  :   If NumOfClicks = 2 then
+                                    itemHit := okItem;
+            Otherwise       :   ;
+        end;
+    Until (itemHit = OkItem) or
+          (UserAbort);
+
+    If Not UserAbort then
+    begin
+        With BackupHeader do
+        begin
+            SelectOutputDevice;
+
+            If (SavesetLocation.DestType = 1) then
+            begin
+                If (SavesetLocation.DeviceType = AppletalkFileServer) then
+                begin
+                    Msg := concat('64:Note that you are unable to read directly ',
+                                  'from a file server, so the Saveset will be retrieved ',
+                                  'from a file on the file server.:^#6');
+    
+                    Junk := AlertWindow(0,Nil,@Msg);
+                end;
+
+                UserAbort := not SelectSourceFile;
+            end;
+        end;
+    end;
+
+    CloseWindow(BPPort);
+
+    CatalogParametersSet := not UserAbort;
+end;
+
+Procedure catalogSaveset;
+var
+    Msg         : textBlock;
+    Junk        : Integer;
+begin
+    If OpenSaveset then
+    begin
+        ObtainWorkBuffer($00010000);
+        ReadHeader;
+        DisposeHandle(WorkBufferHandle);
+
+        If Not UserAbort
+        then
+            EditFileList(2)
+        else
+            begin
+                Msg := concat('23:',
+                              'The Catalog operation has ',
+                              'been cancelled.',
+                              ':^#0');
+                Junk := AlertWindow(0,Nil,@Msg);
+            end;
+ 
+        DeleteFileList;
+        CloseSaveset;
+    end;
+end;
+
+end.

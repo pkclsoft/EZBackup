@@ -1,0 +1,213 @@
+{$ keep 'obj/Backdata' }
+Unit Backdata;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, ListMgr, MenuMgr, WindowMgr,
+     GSOS, ToolLocator;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZTools;
+
+const
+    AppleMenu           = 0;
+    AppleAbout          = 257;
+    AppleShareware      = 258;
+ 
+    FileMenu            = 1;
+    BackUp              = 301;
+    AddToBackup         = 302;
+    Restore             = 303;
+    Catalog             = 304;
+    FilePreferences     = 306;
+    FileQuit            = 308;
+ 
+    EditMenu            = 2;
+    EditUndo            = 250;
+    EditCut             = 251;
+    EditCopy            = 252;
+    EditPaste           = 253;
+    EditClear           = 254;
+ 
+    SpecialMenu         = 5;
+    SpecialBadBlockChk  = 601;
+    SpecialFormatErase  = 602;
+    SpecialOptimize     = 603;
+
+    popUpMenuNumber     = 800;
+ 
+    LongZero            = $00000000;
+ 
+    ConfigPrefixLength  = 15;
+ 
+    ConfigPrefixNumber  = 0;
+ 
+    BackupPrefixNumber  = 9;
+ 
+    plainMask           = $0000;
+ 
+    BlockByteCount      = $00000200;  { The size of one disk block in bytes. }
+ 
+    FileRecordLength    = 128;  { The number of bytes used per file when    }
+                                { recording the file information in the     }
+                                { saveset.                                  }
+ 
+    MajorRelease        = 1;    { The release number of the program.        }
+    MinorRelease        = 1;
+ 
+    notSelected         = 0;
+    included            = 1;
+    excluded            = 0;
+    markedOnly          = 2;
+
+    backupMode          = 0;
+    restoreMode         = 1;
+    viewMode            = 2;
+
+Type
+    DestinationRecord   = Record
+                            Title           : pString;
+                            DestType        : Integer;  { 0=disk, 1=file }
+                            Device          : GSOSOutString;
+                            FullPathName    : PathName;
+                            FileName        : PathName;
+                            DeviceDescr     : dinfoOSDCB;
+                            FirstBlock      : Integer;
+                            UsedBlocks      : Integer;
+                            CurrentBlock    : Integer;
+                            DeviceNum       : Integer;
+                            DeviceType      : Integer;
+                            MemberNum       : Integer;
+                            Valid           : Boolean;
+                          end;
+  
+    FileRecPtr          = ^FileRecord;
+
+   {   *****  IMPORTANT  ***** FileRecord MUST NOT EXCEED 128 BYTES     }
+ 
+    FileRecord          = Record
+                            NextFile         : FileRecPtr;         {    4 }
+                            DirEntry         : dirEntryOSDCB;      {   62 }
+                            DataOffset       : LongInt;            {    4 }
+                            ResourceOffset   : LongInt;            {    4 }
+                            OptionListOffset : LongInt;            {    4 }
+                            OptionListLength : Integer;            {    2 }
+                            ParentDir        : FileRecPtr;         {    4 }
+                            ThisDir          : FileRecPtr;         {    4 }
+                            Selected         : Integer;            {    2 }
+                            Created          : Boolean;            {    2 }
+ 
+    { Insert any new fields BEFORE FileName !  The procedure WriteHeader }
+    { assumes that the FileName field is the last in the record when     }
+    { calculating the size in bytes of one record.                       }
+ 
+                            FileName         : FilenameString;     {   36 }
+                          end;                                     {------}
+                                                                   {  128 }
+ 
+    {   *****  IMPORTANT  ***** BackupHeaderType MUST NOT EXCEED 1024 BYTES  }
+ 
+    BackupHeaderType    = Record
+                            BackupDate          : LongInt;            {    4 }
+                            BackupTime          : LongInt;            {    4 }
+                            NumOfFiles          : Integer;            {    2 }
+                            RootDirName         : GSOSInString;       {  510 }
+                            FileList            : FileRecPtr;         {    4 }
+                            BckMajorRelease     : Integer;            {    2 }
+                            BckMinorRelease     : Integer;            {    2 }
+                            FileSystem          : Integer;            {    2 }
+                            BackupType          : Boolean;            {    2 }
+                            Selected            : Integer;            {    2 }
+                            SourceDeviceIcon    : longint;            {    4 }
+                            DirectoryLength     : longint;            {    4 }
+                            TotalDisks          : longint;            {    4 }
+                            NumLeft             : Integer;            {    2 }
+ 
+    { Insert any new fields before BackupLength !  The procedure WriteHeader }
+    { assumes that the BackupLength field is the last in the record when     }
+    { calculating the size in bytes of one record.                           }
+ 
+                            BackupLength        : LongInt;            {    4 }
+                          end;                                        {------}
+                                                                      {  540 }
+ 
+    WorkAreaTypePtr     = ^WorkAreaType;
+    WorkAreaType        = Byte;
+ 
+    { WorkAreaType should actually be:
+                           packed array [LongZero..WorkBufferSize] of Char; }
+
+    preferencesType     = record
+                            overwriteOldFiles       :   Boolean;
+                            overwritePrompt         :   Boolean;
+                            overwriteAllFiles       :   Boolean;
+                            compressOnRestore       :   Boolean;
+                            verifyDisks             :   Boolean;
+                            backupBitsToBeCleared   :   Boolean;
+                            deletePartialBackup     :   Boolean;
+                            redOnGreen              :   Boolean;
+                          end;
+
+    preferencesPtr      = ^preferencesType;
+    preferencesHandle   = ^preferencesPtr;
+
+Var
+    WorkBufferHandle        : Handle;       { Pointer to a pointer to a byte. }
+    WorkBufferSize          : Longint;
+    WorkArea                : WorkAreaTypePtr;
+
+    ListBufferHandle        : Handle;       { Pointer to a pointer to a byte. }
+    ListBufferSize          : Longint;
+    ListArea                : WorkAreaTypePtr;
+
+    SystemPrefix            : GSOSOutString;
+
+    refreshPathName         : GSOSInString;
+ 
+    SavesetLocation         : DestinationRecord;
+ 
+    BackupHeader            : BackupHeaderType;
+ 
+    WriteFileParams         : readWriteOSDCB;
+ 
+    UserAbort               : Boolean;
+    BadVersion              : Boolean;
+    Reading                 : Boolean;
+    preferencesSaveable     : Boolean;
+    overridePref            : Boolean;
+ 
+    NumOfDisks              : Integer;
+    filesLeftToDo           : Integer;
+    ResourceFileID          : integer;
+    programMode             : Integer;
+ 
+    ByteIndex               : LongInt;
+
+    WindowColors            : wColorTbl;
+ 
+    CurrentDirectory        : FileRecPtr;
+    currentEntry            : FileRecPtr;
+    displayEntry            : FileRecPtr;
+
+    RestoreTopLevel         : pathName;
+ 
+    BackupStartStopRecord   : startStopRecPtr;
+  
+    myList                  : memberList;
+
+    FTypeRecPtr             : ptr;
+
+    redPatternHandle        : patternHandle;
+    yellowPatternHandle     : patternHandle;
+    redPattern              : patternPtr;
+
+    currentPort             : grafPortPtr;  { for use in refresh routines. }
+    messagePort             : grafPortPtr;
+    theMessage              : textBlock;
+
+    prefHandle              : preferencesHandle;
+    pref                    : preferencesType;
+
+implementation
+
+end.

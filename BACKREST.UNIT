@@ -1,0 +1,2002 @@
+{$ keep 'obj/Backrest' }
+Unit Backrest;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata, Backmisc, Backbufr, Backlow, Backread, Backsave, Backedit;
+
+Procedure DoRestoration;
+
+Function RestoreParametersSet : Boolean;
+
+implementation
+
+Const
+{$ copy 'BackTConst.Inc' }
+
+Function ReplaceFile(FileEntry     : FileRecPtr;
+                     PathString    : GSOSInString) : Boolean;
+var
+    Message         : ItemTemplate;
+    YesButton       : ItemTemplate;
+    NoButton        : ItemTemplate;
+    AbortButton     : ItemTemplate;
+    AllButton       : ItemTemplate;
+    AlertRec        : AlertTemplate;
+    ButtonPressed   : Integer;
+    Msg             : pString;
+    GetInfoParms    : getFileInfoOSDCB;
+    Date            : DateRecord;
+    Time            : TimeRecord;
+begin
+    Msg := concat('Replace existing file', chr(Return), chr(Return),
+                  copy(PathString.theString,1,PathString.size), chr(Return),
+                  '      dated ');
+ 
+    With GetInfoParms do
+    begin
+        pcount := 7;
+        pathName := @PathString;
+    end;
+ 
+    GetFileInfoGS(GetInfoParms);
+ 
+    With GetInfoParms do
+        ConvFileDateToDate(modDateTime,Date,Time);
+ 
+    Msg := concat(Msg, Date.Date, ' ', Time.Time, chr(Return), chr(Return),
+                  'with saveset file : ');
+ 
+    with FileEntry^ do
+    begin
+        Msg := concat(Msg, copy(FileName.theString.theString, 1, FileName.theString.size),
+                      chr(Return), '      dated ');
+ 
+        With DirEntry do
+            ConvFileDateToDate(modDateTime,Date,Time);
+ 
+        Msg := concat(Msg, Date.Date, ' ', Time.Time, ' ?');
+    end;
+ 
+    SetForeColor(0);
+    SetBackColor(15);
+ 
+    with AlertRec do
+    begin
+        with AtBoundsRect do
+        begin
+            v1 := 50;
+            h1 := 140;
+            v2 := 149;
+            h2 := 500;
+        end;
+ 
+        AtAlertID := 2;
+        AtStage1 := $80;
+        AtStage2 := $80;
+        AtStage3 := $80;
+        AtStage4 := $80;
+        AtItemList[1] := @YesButton;
+        AtItemList[2] := @NoButton;
+        AtItemList[3] := @AbortButton;
+        AtItemList[4] := @AllButton;
+        AtItemList[5] := @Message;
+        AtItemList[6] := Nil;
+    end;
+ 
+    with YesButton do
+    begin
+        ItemID := 1;
+        with ItemRect do
+        begin
+            v1 := 80;
+            h1 := 8;
+            v2 := 94;
+            h2 := 58;
+        end;
+ 
+        ItemType  := ButtonItem;
+        ItemDescr := @'Yes';
+        ItemValue := 0;
+        ItemFlag  := 0;
+        ItemColor := nil;
+    end;
+ 
+    with NoButton do
+    begin
+        ItemID := 2;
+        with ItemRect do
+        begin
+            v1 := 80;
+            h1 := 66;
+            v2 := 94;
+            h2 := 146;
+        end;
+ 
+        ItemType  := ButtonItem;
+        ItemDescr := @'No';
+        ItemValue := 0;
+        ItemFlag  := 0;
+        ItemColor := nil;
+    end;
+ 
+    with AbortButton do
+    begin
+        ItemID := 3;
+        with ItemRect do
+        begin
+            v1 := 80;
+            h1 := 154;
+            v2 := 94;
+            h2 := 234;
+        end;
+ 
+        ItemType  := ButtonItem;
+        ItemDescr := @'Cancel';
+        ItemValue := 0;
+        ItemFlag  := 0;
+        ItemColor := nil;
+    end;
+ 
+    with AllButton do
+    begin
+        ItemID := 4;
+        with ItemRect do
+        begin
+            v1 := 80;
+            h1 := 242;
+            v2 := 94;
+            h2 := 352;
+        end;
+ 
+        ItemType  := ButtonItem;
+        ItemDescr := @'Replace all';
+        ItemValue := 0;
+        ItemFlag  := 0;
+        ItemColor := nil;
+    end;
+ 
+    with Message do
+    begin
+        ItemID := 5;
+        with ItemRect do
+        begin
+            v1 := 5;
+            h1 := 100;
+            v2 := 80;
+            h2 := 350;
+        end;
+ 
+        ItemType  := ItemDisable + StatText;
+        ItemDescr := @Msg;
+        ItemValue := 0;
+        ItemFlag  := 0;
+        ItemColor := nil;
+    end;
+ 
+    ButtonPressed := CautionAlert(AlertRec,nil);
+ 
+    case ButtonPressed of
+        1       :   ReplaceFile := True;
+        2       :   ReplaceFile := False;
+        3       :   begin
+                        ReplaceFile := False;
+                        UserAbort := True;
+                    end;
+        4       :   begin
+                        ReplaceFile := True;
+                        overridePref := True;
+                    end;
+        otherwise   ;
+    end;
+end;
+
+Function NewVersionOfFile(FileEntry     : FileRecPtr;
+                          PathString    : GSOSInString) : Boolean;
+var
+    GetInfoParms    : getFileInfoOSDCB;
+    ExistingTime    : longInt;
+    SavesetTime     : longInt;
+begin
+    With GetInfoParms do
+    begin
+        pcount := 7;
+        pathName := @PathString;
+    end;
+ 
+    GetFileInfoGS(GetInfoParms);
+ 
+    With GetInfoParms do
+        ConvFileDateToSeconds(modDateTime,ExistingTime);
+ 
+    With FileEntry^.DirEntry do
+        ConvFileDateToSeconds(modDateTime,SavesetTime);
+ 
+    If (SavesetTime > ExistingTime)
+    then
+        NewVersionOfFile := True
+    else
+        NewVersionOfFile := False;
+end;
+
+Function CreateFile(FileEntry : FileRecPtr;
+                    DirName   : pathName) : Boolean;
+{ Will create an empty file from the saveset.  If DirName is a null       }
+{ string, then the full pathname is constructed from the saveset header.  }
+{ Otherwise, the full pathname is constructed by concatenating the actual }
+{ filename and the specified directory name.                              }
+var
+    FilePath        : GSOSInString;
+    FullName        : pathName;
+    CreateParms     : createOSDCB;
+    DestroyParms    : destroyOSDCB;
+    nullParms       : nullOSDCB;
+    Msg             : textBlock;
+    OverwriteFile   : Boolean;
+    FileCreated     : Boolean;
+    FileSkipped     : Boolean;
+    destFileSystem  : integer;
+
+    Procedure FixPath;
+    begin
+        BuildPathName(FileEntry, FullName);
+ 
+        If DirName <> '' then
+        begin
+            delete(FullName,1,BackupHeader.RootDirName.size);
+            Insert(DirName, FullName, 1);
+        end;
+ 
+        FilePath.size := length(FullName);
+        FilePath.theString := copy(FullName,1,length(FullName));
+    end;
+
+    Function NumOfEntries : integer;
+    var
+        curEntry    :   FileRecPtr;
+        tmpCounter  :   integer;
+    begin
+        curEntry := FileEntry^.NextFile;
+        tmpCounter := 0;
+
+        while curEntry <> Nil do
+        begin
+            if curEntry^.ParentDir = curEntry then
+                tmpCounter := tmpCounter + 1;
+
+            curEntry := curEntry^.NextFile;
+        end;
+
+        numOfEntries := tmpCounter;
+    end;
+
+begin
+    FileCreated := False;
+    FileSkipped := False;
+    FixPath;
+
+    With CreateParms, FileEntry^ do
+    begin
+        pcount := 7;
+        pathName := @FilePath;
+        access := readEnableMask + writeEnableMask;
+        fileType := DirEntry.fileType;
+        auxType := DirEntry.auxType;
+        dataEOF := 0;
+        resourceEOF := 0;
+
+        If (DirEntry.flags & $8000) <> 0
+        then
+            storageType := 5
+        else
+            If DirEntry.fileType = DirectoryFile
+            then
+                begin
+                    storageType := 13;
+                    dataEOF := numOfEntries;
+                end
+            else
+                storageType := 1;
+    end;
+    
+    CreateGS(CreateParms);
+
+    Repeat
+        If ToolError = $40 then
+        begin
+            destFileSystem := EZGetFileSystem(FilePath);
+            FileSkipped := EZTranslateName(FileEntry^.FileName,destFileSystem);
+            EZForceRefresh;
+            FixPath;
+
+            CreateGS(CreateParms);
+        end;
+    Until (ToolError <> $40) or
+          FileSkipped;
+
+    If not FileSkipped then
+    begin     
+        If (ToolError = $47)
+        then
+            begin
+                If FileEntry^.DirEntry.fileType = DirectoryFile
+                then
+                    begin
+                        nullParms.pcount := 0;
+                        NullGS(nullParms);
+                        OverwriteFile := True;
+                    end
+                else
+                    begin
+                        If (not pref.overwriteAllFiles) and
+                           (not overridePref)
+                        then
+                            begin
+                                If Not pref.overwriteOldFiles
+                                then
+                                    OverwriteFile := ReplaceFile(FileEntry, FilePath)
+                                else
+                                    OverwriteFile := NewVersionOfFile(FileEntry, FilePath);
+                            end
+                        else
+                            OverwriteFile := True;
+ 
+                        If OverwriteFile then
+                        begin
+                            With DestroyParms do
+                            begin
+                                pcount := 1;
+                                pathName := @FilePath;
+                            end;
+ 
+                            DestroyGS(DestroyParms);
+ 
+                            If ToolError = 0 then
+                            begin
+                                CreateGS(CreateParms);
+                                FileCreated := True;
+                            end;
+                        end;
+                    end;
+            end
+        else
+            OverwriteFile := True;
+ 
+        If ToolError <> 0
+        then
+            begin
+                Msg := concat('An error has occured whilst creating the file ',
+                             ' "', fullName, '" from the saveset.');
+                UserAbort := ProdosError(ToolError, Msg, False);
+                FileCreated := not UserAbort;
+            end
+        else
+            FileCreated := OverwriteFile;
+    end;
+
+    CreateFile := FileCreated;
+end;
+
+Procedure ExtractFile(FileEntry : FileRecPtr;
+                      DirName   : pathName);
+{ Will extract a file from the saveset.             If DirName is a null  }
+{ string, then the full pathname is constructed from the saveset header.  }
+{ Otherwise, the full pathname is constructed by concatenating the actual }
+{ filename and the specified directory name.                              }
+var
+    FullName        :   pathName;
+    WriteParms      :   readWriteOSDCB;
+    Msg             :   textBlock;
+    OpenParams      :   openOSDCB;
+    WriteParams     :   readWriteOSDCB;
+    CloseParams     :   closeOSDCB;
+    ByteCount       :   LongInt;
+    PathString      :   GSOSInString;
+    BlockNumber     :   Integer;
+    SetInfoParms    :   ezSetFileInfoOSDCB;
+    optionListLen   :   integerPtr;
+    BlockCount      :   Integer;
+    clearBkParm     :   clrBkupBitOSDCB;
+ 
+    Procedure TransferData;
+    var
+        bufferByteCount   :  longint;
+    begin
+        bufferByteCount := adjust(ByteCount);
+
+        With WriteParams do
+        begin
+            pcount := 4;
+            refNum := OpenParams.refNum;
+            dataBuffer := Pointer(ord4(WorkArea) + ByteIndex);
+            requestCount := ord4(ByteCount);
+        end;
+ 
+        WriteGS(WriteParams);
+ 
+        ByteIndex := ord4(ByteIndex) + ord4(bufferByteCount);
+    end;
+
+begin
+    BuildPathName(FileEntry, FullName);
+ 
+    If DirName <> '' then
+    begin
+        delete(FullName,1,BackupHeader.RootDirName.size);
+        Insert(DirName, FullName, 1);
+    end;
+ 
+    PathString.size := length(FullName);
+    PathString.theString := copy(FullName,1,length(FullName));
+ 
+    With FileEntry^ do
+    begin
+        If DirEntry.fileType <> DirectoryFile then
+        { We dont copy the contents of the actual directory file into the      }
+        { backup, after all the information is already in the header.          }
+        begin
+            With OpenParams do
+            begin
+                pcount := 2;
+                pathName := @PathString;
+                requestAccess := writeEnableMask;   { Write access only }
+            end;
+ 
+            OpenGS(OpenParams);
+ 
+            If ToolError = 0 then
+            begin
+                ByteCount := DirEntry.eofValue;
+
+                If ByteCount > 0 then
+                    TransferData;
+ 
+                With CloseParams do
+                begin
+                    pcount := 1;
+                    refNum := OpenParams.refNum;
+                end;
+ 
+                CloseGS(CloseParams);
+ 
+                If ((DirEntry.flags & $8000) <> 0) and
+                   (ToolError = 0)                 then
+                begin
+                    With OpenParams do
+                    begin
+                        pcount := 4;
+                        pathName := @PathString;
+                        requestAccess := writeEnableMask; { write access only }
+                        resourceNumber := 1;
+                    end;
+ 
+                    OpenGS(OpenParams);
+ 
+                    If ToolError = 0 then
+                    begin
+                        ByteCount := DirEntry.resourceEof;
+ 
+                        If ByteCount > ord4(0) then
+                            TransferData;
+ 
+                        With CloseParams do
+                        begin
+                            pcount := 1;
+                            refNum := OpenParams.refNum;
+                        end;
+ 
+                        CloseGS(CloseParams);
+                    end;
+                end;
+            end;
+
+            If FileEntry^.OptionListLength <> 0
+            then
+                begin
+                    with FileEntry^ do
+                    begin
+                        ByteCount := OptionListLength;
+     
+                        SetInfoParms.optionList := Pointer(ord4(WorkArea) +
+                                                           ByteIndex);
+
+                        ByteIndex := ByteIndex + adjust(byteCount);
+                    end;
+                end
+            else
+                SetInfoParms.optionList := Nil;
+        end;
+    end;
+ 
+    If ToolError <> 0
+    then
+        begin
+            Msg := concat('An error has occured whilst writing the file ',
+                          ' "', fullName, '" from the saveset.');
+            UserAbort := ProdosError(ToolError, Msg, False);
+        end
+    else
+        begin
+            With SetInfoParms, FileEntry^ do
+            begin
+                pcount := 8;
+                pathName := @PathString;
+                access := DirEntry.access;
+                fileType := DirEntry.fileType;
+                auxType := DirEntry.auxType;
+                nullField1 := 0;
+                createDateTime := DirEntry.createDateTime;   { create date and time is one parameter                    }
+                modDateTime := DirEntry.modDateTime;         { mod date and time make up a single parameter.            }
+            end;
+ 
+            EZSetFileInfoGS(SetInfoParms);
+
+            If pref.backupBitsToBeCleared then
+            begin
+                With clearBkParm do
+                begin
+                    pcount := 1;
+                    pathname := @PathString;
+                end;
+
+                ClearBackupGS(clearBkParm);
+            end;
+        end;
+end;
+
+Procedure ImitateExtraction(FileEntry : FileRecPtr);
+{ Will extract a file from the saveset.             If DirName is a null  }
+{ string, then the full pathname is constructed from the saveset header.  }
+{ Otherwise, the full pathname is constructed by concatenating the actual }
+{ filename and the specified directory name.                              }
+var
+    ByteCount       :   LongInt;
+ 
+    Procedure TransferData;
+    var
+        bufferByteCount   :  longint;
+    begin
+        bufferByteCount := adjust(ByteCount);
+        ByteIndex := ord4(ByteIndex) + ord4(bufferByteCount);
+    end;
+
+begin
+    With FileEntry^ do
+    begin
+        If DirEntry.fileType <> DirectoryFile then
+        { We dont copy the contents of the actual directory file into the      }
+        { backup, after all the information is already in the header.          }
+        begin
+            ByteCount := DirEntry.eofValue;
+
+            If ByteCount > ord4(0) then
+                TransferData;
+ 
+            If ((DirEntry.flags & $8000) <> 0) then
+            begin
+                ByteCount := DirEntry.resourceEof;
+ 
+                If ByteCount > ord4(0) then
+                    TransferData;
+            end;
+
+            If FileEntry^.OptionListLength <> 0 then
+            begin
+                with FileEntry^ do
+                begin
+                    ByteCount := ord4(OptionListLength);
+                    ByteIndex := ByteIndex + adjust(byteCount);
+                end;
+            end
+        end;
+    end;
+end;
+
+Procedure ExtractOneFile(FileEntry : FileRecPtr;
+                         DirName   : pathName);
+{ Will extract a file from the saveset.             If DirName is a null  }
+{ string, then the full pathname is constructed from the saveset header.  }
+{ Otherwise, the full pathname is constructed by concatenating the actual }
+{ filename and the specified directory name.                              }
+var
+    FullName        :   pathName;
+    WriteParms      :   readWriteOSDCB;
+    Msg             :   textBlock;
+    OpenParams      :   openOSDCB;
+    WriteParams     :   readWriteOSDCB;
+    CloseParams     :   closeOSDCB;
+    ByteCount       :   LongInt;
+    PathString      :   GSOSInString;
+    BlockNumber     :   longint;
+    SetInfoParms    :   ezSetFileInfoOSDCB;
+    optionListLen   :   integerPtr;
+    BlockCount      :   longint;
+    clearBkParm     :   clrBkupBitOSDCB;
+ 
+    Procedure TransferData;
+    const
+        MaxWriteSize    =  65536;
+    var
+        BlockCount      :  longint;
+        BlocksWanted    :  longint;
+    begin
+        BlockCount := ord4(ByteCount div ord4(BlockByteCount));
+ 
+        If ord4(ord4(BlockCount) * ord4(BlockByteCount)) < ord4(ByteCount) then
+            BlockCount := BlockCount + 1;
+ 
+        While (ByteCount > ord4(0)) and (not UserAbort) do
+        begin
+            If ByteCount > WorkBufferSize
+            then
+                begin
+                    If WorkBufferSize > ord4(MaxWriteSize)
+                    then
+                        BlocksWanted := ord4(MaxWriteSize) div 
+                                        ord4(BlockByteCount)
+                    else
+                        BlocksWanted := ord4(WorkBufferSize) div
+                                        ord4(BlockByteCount);
+                end
+            else
+                BlocksWanted := BlockCount;
+
+            ReadBackup(BlocksWanted);
+ 
+            If ByteCount > WorkBufferSize
+            then
+                begin
+                    If WorkBufferSize > ord4(MaxWriteSize)
+                    then
+                        ByteIndex := ord4(MaxWriteSize)
+                    else
+                        ByteIndex := ord4(WorkBufferSize);
+                end
+            else
+                ByteIndex := ord4(ByteCount);
+ 
+            With WriteParams do
+            begin
+                pcount := 5;
+                refNum := OpenParams.refNum;
+                dataBuffer := Pointer(WorkArea);
+                requestCount := ord4(ByteIndex);
+                cachePriority := 1;
+            end;
+ 
+            WriteGS(WriteParams);
+ 
+            ByteCount := ord4(ByteCount) - ord4(ByteIndex);
+            BlockCount := BlockCount - BlocksWanted;
+        end;
+    end;
+
+begin
+    BuildPathName(FileEntry, FullName);
+ 
+    If DirName <> '' then
+    begin
+        delete(FullName,1,BackupHeader.RootDirName.size);
+        Insert(DirName, FullName, 1);
+    end;
+ 
+    PathString.size := length(FullName);
+    PathString.theString := copy(FullName,1,length(FullName));
+ 
+    With FileEntry^ do
+    begin
+        If DirEntry.fileType <> DirectoryFile then
+        { We dont copy the contents of the actual directory file into the      }
+        { backup, after all the information is already in the header.          }
+        begin
+            With OpenParams do
+            begin
+                pcount := 2;
+                pathName := @PathString;
+                requestAccess := writeEnableMask;   { Write access only }
+            end;
+ 
+            OpenGS(OpenParams);
+ 
+            If ToolError = 0 then
+            begin
+                ByteCount := DirEntry.eofValue;
+
+                If ByteCount > ord4(0) then
+                begin
+                    BlockNumber := ord4(DataOffset div 
+                                        ord4(BlockByteCount));
+ 
+                    SetSavesetPosition(BlockNumber);
+
+                    TransferData;
+                end;
+ 
+                With CloseParams do
+                begin
+                    pcount := 1;
+                    refNum := OpenParams.refNum;
+                end;
+ 
+                CloseGS(CloseParams);
+ 
+                If ((DirEntry.flags & $8000) <> 0) and
+                   (ToolError = 0)                 then
+                begin
+                    With OpenParams do
+                    begin
+                        pcount := 4;
+                        pathName := @PathString;
+                        requestAccess := writeEnableMask; { write access only }
+                        resourceNumber := 1;
+                    end;
+ 
+                    OpenGS(OpenParams);
+ 
+                    If ToolError = 0 then
+                    begin
+                        ByteCount := DirEntry.resourceEof;
+ 
+                        If ByteCount > ord4(0) then
+                        begin
+                            BlockNumber := ord4(ResourceOffset div
+                                                ord4(BlockByteCount));
+ 
+                            SetSavesetPosition(BlockNumber);
+ 
+                            TransferData;
+                        end;
+ 
+                        With CloseParams do
+                        begin
+                            pcount := 1;
+                            refNum := OpenParams.refNum;
+                        end;
+ 
+                        CloseGS(CloseParams);
+                    end;
+                end;
+            end;
+
+            If FileEntry^.OptionListLength <> 0
+            then
+                begin
+                    with FileEntry^ do
+                    begin
+                        ByteCount := ord4(OptionListLength);
+     
+                        BlockNumber := ord4(OptionListOffset div
+                                            ord4(BlockByteCount));
+     
+                        SetSavesetPosition(BlockNumber);
+
+                        BlockCount := ord4(ByteCount div 
+                                           ord4(BlockByteCount));
+ 
+                        If ord4(BlockCount * ord4(BlockByteCount)) < ByteCount
+                        then
+                            BlockCount := BlockCount + 1;
+ 
+                        ReadBackup(BlockCount);
+ 
+                        SetInfoParms.optionList := Pointer(WorkArea);
+                    end;
+                end
+            else
+                SetInfoParms.optionList := Nil;
+        end;
+    end;
+ 
+    If ToolError <> 0
+    then
+        begin
+            Msg := concat('An error has occured whilst writing the file ',
+                          ' "', fullName, '" from the saveset.');
+            UserAbort := ProdosError(ToolError, Msg, False);
+        end
+    else
+        begin
+            With SetInfoParms, FileEntry^ do
+            begin
+                pcount := 8;
+                pathName := @PathString;
+                access := DirEntry.access;
+                fileType := DirEntry.fileType;
+                auxType := DirEntry.auxType;
+                nullField1 := 0;
+                createDateTime := DirEntry.createDateTime;   { create date and time is one parameter                    }
+                modDateTime := DirEntry.modDateTime;         { mod date and time make up a single parameter.            }
+            end;
+ 
+            EZSetFileInfoGS(SetInfoParms);
+
+            If pref.backupBitsToBeCleared then
+            begin
+                With clearBkParm do
+                begin
+                    pcount := 1;
+                    pathname := @PathString;
+                end;
+
+                ClearBackupGS(clearBkParm);
+            end;
+        end;
+end;
+
+Function ReadIntoMemory(currentEntry   :   FileRecPtr) : Integer;
+var
+    bytesToRead     :   longint;
+    blocksToRead    :   longint;
+    filesToRead     :   integer;
+    blockNumber     :   longint;
+    filesLeft       :   integer;
+    itemHit         :   longint;
+    NumOfClicks     :   integer;
+
+    Function numberToRead(currentEntry  :   FileRecPtr) : integer;
+    var
+        lengthThisFile  :   longint;
+        fileCount       :   integer;
+        bufferPoint     :   longint;
+
+        Procedure findNextSelectedEntry;
+        begin
+            If (fileCount > 0) or
+               (currentEntry^.Selected = notSelected) then
+                repeat
+                    currentEntry := currentEntry^.NextFile;
+                until (currentEntry = Nil) or
+                      (currentEntry^.Selected <> notSelected);
+
+            If currentEntry <> Nil then
+            begin
+                If currentEntry^.DirEntry.fileType <> DirectoryFile
+                then
+                    with currentEntry^ do
+                        lengthThisFile := adjust(DirEntry.eofValue) +
+                                          adjust(DirEntry.resourceEof) +
+                                          adjust(OptionListLength)
+                else
+                    lengthThisFile := 0;
+            end;
+        end;
+
+    begin
+        fileCount := 0;
+        bufferPoint := 0;
+
+        findNextSelectedEntry;
+
+        while (ord4(bufferPoint + lengthThisFile) <= WorkBufferSize) and
+              (currentEntry <> Nil) do
+        begin
+            bufferPoint := bufferPoint + lengthThisfile;
+            fileCount := fileCount + 1;
+
+            findNextSelectedEntry;
+        end;
+
+        numberToRead := fileCount;
+    end;
+begin
+    filesToRead := numberToRead(currentEntry);;
+    filesLeft := filesToRead;
+    ByteIndex := 0;
+    Reading := True;
+
+    while (filesLeft > 0) and
+          not UserAbort do
+    begin
+        If currentEntry^.Selected <> notSelected then
+        begin
+            displayEntry := currentEntry;
+
+            DisplayDetails;
+
+            If currentEntry^.DirEntry.fileType <> DirectoryFile then
+            begin
+                with currentEntry^ do
+                begin
+                    bytesToRead := adjust(DirEntry.eofValue) +
+                                   adjust(DirEntry.resourceEof) +
+                                   adjust(OptionListLength);
+
+                    blockNumber := ord4(DataOffset div ord4(BlockByteCount));
+                end;
+
+                blocksToRead := ord4(bytesToRead div ord4(BlockByteCount));
+
+                If ord4(blocksToRead * ord4(BlockByteCount)) < bytesToRead then
+                    blocksToRead := blocksToRead + 1;
+ 
+                SetSavesetPosition(blockNumber);
+
+                If not UserAbort then
+                    ReadBackup(blocksToRead);
+            end;
+
+            filesLeft := filesLeft - 1;
+            With BackupHeader do
+                NumLeft := NumLeft - 1;
+
+            If EZDialogEvent(NumOfClicks) = 1 then
+                UserAbort := True;
+        end;
+ 
+        currentEntry := currentEntry^.NextFile;
+    end;
+
+    ByteIndex := 0;
+
+    readIntoMemory := filesToRead;
+end;
+
+Procedure WriteToFiles(var  currentEntry    :   FileRecPtr;
+                            numberToWrite   :   Integer);
+var
+    itemHit             : longint;
+    NumOfClicks         : integer;
+    sessionParms        : nullOSDCB;
+
+    Procedure doOneFile;
+    begin
+        If currentEntry^.Selected <> notSelected then
+        begin
+            displayEntry := currentEntry;
+
+            If Not pref.compressOnRestore
+            then
+                begin
+                    If CreateFile(currentEntry, RestoreTopLevel)
+                    then
+                        begin
+                            If numberToWrite > 0
+                            then
+                                ExtractFile(currentEntry, RestoreTopLevel)
+                            else
+                                ExtractOneFile(currentEntry, RestoreTopLevel);
+                        end
+                    else
+                        ImitateExtraction(currentEntry);
+                end
+            else
+                If currentEntry^.Created then begin
+                    If numberToWrite > 0 then
+                        ExtractFile(currentEntry, RestoreTopLevel)
+                    else
+                        ExtractOneFile(currentEntry, RestoreTopLevel);
+                end else
+                    ImitateExtraction(currentEntry);
+ 
+            filesLeftToDo := filesLeftToDo - 1;
+
+            DisplayDetails;
+
+            If numberToWrite > 0 then
+                numberToWrite := numberToWrite - 1;
+
+            If EZDialogEvent(NumOfClicks) = 1 then
+                UserAbort := True;
+        end;
+    end;
+begin
+    Reading := False;
+
+    sessionParms.pcount := 0;
+    BeginSessionGS(sessionParms);
+
+    If (numberToWrite = 0) and
+       (filesLeftToDo > 0) then
+    begin
+        doOneFile;
+        currentEntry := currentEntry^.NextFile;
+    end;
+
+    While (numberToWrite > 0) and
+          not UserAbort do
+    begin
+        doOneFile;
+
+        currentEntry := currentEntry^.NextFile;
+    end;
+
+    EndSessionGS(sessionParms);
+end;
+
+Procedure DoRestoration;
+const
+    CancelItem          = 1;
+    NullItem            = 2;
+var
+    DRPort              : grafPortPtr;
+ 
+    itemHit             : longint;
+    NumOfClicks         : integer;
+ 
+    TmpRect             : Rect;
+ 
+    ctlList             : array [1..NullItem] of ptr;
+ 
+    NewControl2Junk     : ctlRecHndl;
+ 
+    MsgBox              : grafPortPtr;
+    Junk                : Boolean;
+
+    numberInMemory      : integer;
+
+begin
+    BackupHeader.NumLeft := BackupHeader.NumOfFiles;
+    filesLeftToDo := BackupHeader.NumOfFiles;
+    currentEntry := BackupHeader.FileList;
+
+    With TmpRect do
+    begin
+        h1 := 130;
+        v1 := 68;
+        h2 := 510;
+        v2 := 133;
+    end;
+ 
+    DRPort := startupEZDialog(TmpRect,
+                              @RefreshActivityWindow);
+ 
+    SetPort(DRPort);
+    currentPort := DRPort;
+ 
+    If pref.compressOnRestore
+    then
+        begin
+            MsgBox := EZMessageBox('Creating Files, please wait...');
+ 
+            While (currentEntry <> Nil) and
+                  (not UserAbort) do
+            begin
+                If currentEntry^.Selected <> notSelected then
+                    currentEntry^.Created := CreateFile(currentEntry, RestoreTopLevel);
+ 
+                currentEntry := currentEntry^.NextFile;
+            end;
+ 
+            CloseDialog(MsgBox);
+            setPort(currentPort);
+        end
+    else
+        begin
+            with TmpRect do
+            begin
+                h1 := 230;
+                v1 := 49;
+                h2 := 370;
+                v2 := 61;
+            end;
+ 
+            ctlList[CancelItem] := newButtonTemplate(CancelItem,
+                                                     TmpRect,
+                                                     0,
+                                                     0,
+                                                     0,
+                                                     @'Cancel',
+                                                     Nil,
+                                                     Nil);
+ 
+            ctlList[NullItem] := Nil;
+ 
+            NewControl2Junk := NewControl2(DRPort, 3, @ctlList);
+ 
+            DrawControls(DRPort);
+        end;
+ 
+    itemHit := 0;
+    currentEntry := BackupHeader.FileList;
+ 
+    WaitCursor;
+
+    while (currentEntry <> Nil) and
+          (filesLeftToDo > 0) and
+          (itemHit <> CancelItem) and
+          (not UserAbort) do
+    begin
+        numberInMemory := ReadIntoMemory(currentEntry);
+
+        If not UserAbort then
+            WriteToFiles(currentEntry, numberInMemory);
+ 
+        itemHit := EZDialogEvent(NumOfClicks);
+    end;
+ 
+    InitCursor;
+
+    If itemHit = CancelItem then
+        UserAbort := True;
+ 
+    CloseSaveset;
+ 
+    CloseWindow(DRPort);
+end;
+
+Procedure RefreshRestoreParms;
+var
+  
+  theDate:  DateRecord;
+  theTime:  TimeRecord;
+begin
+    SetForeColor(0);
+    SetBackColor(3);
+ 
+    MoveTo(11,16);
+    DrawString(@'Restore from which location');
+
+    MoveTo(360,16);
+    DrawString(@'... to which folder');
+
+    MoveTo(11,144);
+    DrawString(@'Backup date: ');
+
+    WITH BackupHeader DO BEGIN
+      If (fileList <> NIL) then begin
+        ConvP8ToDate(BackupDate, theDate);
+        ConvP8ToTime(BackupTime, theTime);
+
+        DrawString(@theDate.Date);
+        DrawString(@' at ');
+        DrawString(@theTime.Time);
+        DrawString(@'     ');
+      end;
+    END;
+
+    DrawControls(currentPort);
+end;
+
+Function RestoreParametersSet;
+const
+    OkItem              = 1;
+    CancelItem          = 2;
+    SelectFilesItem     = 3;
+    directoryListItem   = 4;
+    deviceListItem      = 5;
+    nextDiskItem        = 6;
+    newFolderItem       = 7;
+    directNameItem      = 8;
+    parentMenuItem      = 9;
+    NullItem            = 10;
+
+    MaxMembers          =   2500;
+
+type
+    fpString            =   packed array [0..32] of char;
+    fpStringPtr         =   ^fpString;
+
+    fileListMemRec      =   record
+                                memPtr      :   fpStringPtr;
+                                memFlag     :   byte;
+                                memValue    :   longint;
+                            end;
+    fileListMemRecPtr   =   ^fileListMemRec;
+
+    fileListMemberList  =   array [1..MaxMembers] of fileListMemRec;
+    fileListMemberListPtr =   ^fileListMemberList;
+
+var
+    RPPort              : grafPortPtr;
+
+    itemHit             : longint;
+    NumOfClicks         : integer;
+
+    TmpRect             : rect;
+    DestRect            : rect;
+
+    ctlList             : array [1..NullItem] of ptr;
+
+    NewControl2Junk     : ctlRecHndl;
+    ValidJunk           : Boolean;
+
+    currentPrefix       : GSOSOutString;
+    currentMember       : integer;
+
+    directoryChanged    : boolean;
+    sourceHasChanged    : boolean;
+
+    directoryList       : fileListMemberList;
+    numOfDirectories    : integer;
+    deviceList          : devMemberList;
+    numOfDevices        : integer;
+
+    Msg                 : textBlock;
+    Junk                : Integer;
+
+    popupDefault        : integer;
+    parentMenuTemplate  : ptr;
+
+    prefixParms         : getPrefixOSDCB;
+
+    Function SelectInputDevice : Boolean;
+    var
+        DeviceName      :   GSOSOutString;
+        Count           :   Integer;
+        SelectedMember  :   Integer;
+        sourceOk        :   Boolean;
+    begin
+        SelectedMember := EZNextMember(0,deviceListItem);
+        sourceOk := True;
+
+        If SelectedMember = 0
+        then
+            sourceOk := False
+        else
+            with deviceList[SelectedMember], SavesetLocation do
+            begin
+                deviceType := ord(memDevice);
+
+                If deviceType <> -1 then
+                begin
+                    deviceNum := EZNextDevice(0, ord(memDevice));
+
+                    Device.maxSize := GSOSNameLength + 4;
+ 
+                    With DeviceDescr do
+                    begin
+                        pcount := 8;
+                        devNum := DeviceNum;
+                        devName := @Device;
+                    end;
+ 
+                    DInfoGS(DeviceDescr);
+                end;
+ 
+                case ord(memDevice) of
+                    -1                  :   DestType := 1;
+                    AppletalkFileServer :   sourceOk := SetupFileServer(ord(memDevice));
+                    otherwise           :   DestType := 0;
+                end;
+
+                If sourceOk then
+                begin
+                    If DestType = 0
+                    then
+                        begin
+                            Count := ord(DeviceDescr.totalBlocks div 4096);
+                            If (Count * 4096) < DeviceDescr.totalBlocks then
+                                Count := Count + 1;
+                            FirstBlock := Count + 6;
+ 
+                            UsedBlocks := ord(ord4(DeviceDescr.totalBlocks) -
+                                                  ord4(FirstBlock));
+                        end
+                    else
+                        begin
+                            If (SavesetLocation.DeviceType = AppletalkFileServer) then
+                            begin
+                                Msg := concat('64:Note that you are unable to read directly ',
+                                              'from a file server, so the Saveset will be retrieved ',
+                                              'from a file on the file server.:^#6');
+    
+                                Junk := AlertWindow(0,Nil,@Msg);
+                            end;
+
+                            sourceOk := SelectSourceFile;
+                        end;
+                end;
+            end;
+
+        SelectInputDevice := sourceOk;
+    end;
+
+    Function GetSubDirectories : Integer;
+    var
+        MemberNumber    : Integer;
+        OpenParams      : openOSDCB;
+        DirEntryParams  : dirEntryOSDCB;
+        CloseParams     : closeOSDCB;
+        FileName        : FileNameString;
+        TmpString       : pString;
+        ErrorString     : textBlock;
+        VolumeName      : GSOSInString;
+        Count           : Integer;
+    begin
+        VolumeName.theString := currentPrefix.theString.theString;
+        VolumeName.size := currentPrefix.theString.size;
+ 
+        UserAbort := MountVolume(VolumeName);
+ 
+        MemberNumber := 1;
+ 
+        With OpenParams do
+        begin
+            pcount := 3;
+            pathName := @currentPrefix.theString.size;
+            requestAccess := readEnableMask;   { read access only }
+        end;
+ 
+        If Not UserAbort then
+            OpenGS(OpenParams);
+ 
+        If (Not UserAbort) and
+           (ToolError = 0) then
+        begin
+            With DirEntryParams do
+            begin
+                pcount := 7;
+                refNum := OpenParams.refNum;
+                base := 1;
+                displacement := 1;
+                FileName.maxSize := FileNameLength + 4;
+                FileName.theString.size := 0;
+                FileName.theString.theString := '';
+                name := @FileName;
+            end;
+ 
+            GetDirEntryGS(DirEntryParams);
+ 
+            While (MemberNumber < 101) and
+                  (ToolError = 0) do
+            begin
+                If (DirEntryParams.fileType = DirectoryFile) then
+                begin
+                    TmpString := copy(Filename.theString.theString,
+                                      1,
+                                      FileName.theString.size);
+ 
+                    If directoryList[MemberNumber].memPtr = Nil then
+                        new(directoryList[MemberNumber].memPtr);
+
+                    With directoryList[MemberNumber] do
+                    begin
+                        memPtr^ := TmpString;
+                        memFlag := $00;
+                        memValue := ord4(DirEntryParams.fileType);
+                    end;
+ 
+                    MemberNumber := MemberNumber + 1;
+                end;
+
+                With DirEntryParams do
+                begin
+                    pcount := 7;
+                    refNum := OpenParams.refNum;
+                    base := 1;
+                    displacement := 1;
+                    FileName.maxSize := FileNameLength + 4;
+                    FileName.theString.size := 0;
+                    FileName.theString.theString := '';
+                    name := @FileName;
+                end;
+ 
+                GetDirEntryGS(DirEntryParams);
+            end;
+        end;
+ 
+        With CloseParams do
+        begin
+            pcount := 1;
+            refNum := OpenParams.refNum;
+        end;
+     
+        If (ToolError = 0) or
+           (ToolError = $61)
+        then
+            begin
+                CloseGS(CloseParams);
+            end
+        else
+            begin
+                ErrorString := concat('An error has occured ',
+                                      'while getting the directory list. ',
+                                      'Aborting the Restoration.');
+                UserAbort := ProdosError(ToolError, ErrorString, True);
+            end;
+ 
+        GetSubDirectories := MemberNumber - 1;
+    end;
+
+    Procedure RefreshDirList(ListItem       :   longint);
+    var
+        numOfDirectories : integer;
+        selectNew        : integer;
+    begin
+        numOfDirectories := GetSubDirectories;
+        if numOfDirectories = 0
+        then
+            selectNew := 0
+        else
+            selectNew := 1;
+
+        EZNewList(@EZDrawMember,
+                  1,
+                  @directoryList,
+                  numOfDirectories,
+                  selectNew,
+                  ListItem);
+    end;
+
+    Procedure MoveToNextDisk(var moved :   boolean);
+    var
+        StartChar           : Integer;
+        TmpString           : pString;
+        DevNumParms         : getDevNumOSDCB;
+        VolumeName          : GSOSOutString;
+        ValidDevice         : Boolean;
+        DevInfo             : dInfoOSDCB;
+        DevStatus           : dStatusOSDCB;
+        DeviceNumber        : Integer;
+        DeviceName          : GSOSOutString;
+        VolumeParms         : volumeOSDCB;
+ 
+        StatusRecord        : Record
+                                StatusWord  : Integer;
+                                TotalBlocks : LongInt;
+                              end;
+    begin
+        TmpString := copy(currentPrefix.theString.theString,1,currentPrefix.theString.size);
+ 
+        StartChar := rindex(TmpString,Separator);
+ 
+        While StartChar > 1 do
+        begin
+            delete(TmpString, StartChar, Length(TmpString) - StartChar + 1);
+            StartChar := rindex(TmpString,Separator);
+        end;
+ 
+        VolumeName.maxSize := GSOSNameLength + 4;
+        VolumeName.theString.theString := copy(TmpString,1,length(TmpString));
+        VolumeName.theString.size := length(TmpSTring);
+ 
+        DevNumParms.pcount := 2;
+        DevNumParms.devName := @VolumeName.theString.size;
+ 
+        GetDevNumberGS(DevNumParms);
+
+        ValidDevice := False;
+        DeviceNumber := DevNumParms.devNum + 1;
+ 
+        DeviceName.maxSize := GSOSNameLength + 4;
+        DeviceName.theString.size := 0;
+        DeviceName.theString.theString := '';
+ 
+        Repeat
+            With DevInfo do
+            begin
+                pcount := 3;
+                devNum := DeviceNumber;
+                devName := @DeviceName;
+            end;
+ 
+            DInfoGS(DevInfo);
+ 
+            If ToolError = $11 { parameter out of range }
+            then
+                DeviceNumber := 1
+            else
+                begin
+                    With VolumeParms do
+                    begin
+                        pcount := 2;
+                        devName := @DeviceName.theString.theString;
+                        volName := @VolumeName;
+                    end;
+ 
+                    VolumeGS(VolumeParms);
+ 
+                    If (ToolError = 0) and
+                       ((DevInfo.characteristics & dcmBlockDevice) = dcmBlockDevice) and
+                       EZIsOnline(DeviceNumber)
+                    then
+                        ValidDevice := True
+                    else
+                        DeviceNumber := DeviceNumber + 1;
+                end;
+        Until ValidDevice;
+ 
+        With VolumeParms do
+        begin
+            pcount := 2;
+            devName := @DeviceName.theString.theString;
+            volName := @VolumeName;
+        end;
+ 
+        VolumeGS(VolumeParms);
+ 
+        currentPrefix := VolumeName;
+        moved := true;
+    end;
+ 
+    Procedure HandleOpenButton(    ListItem         :   longint;
+                               var moved            :   boolean);
+    var
+        SelectedMember      : integer;
+        TmpString           : pString;
+    begin
+        SelectedMember := EZNextMember(0, ListItem);
+
+        If SelectedMember <> 0 then
+        begin
+            TmpString := copy(currentPrefix.theString.theString,1,currentPrefix.theString.size);
+            TmpString := concat(TmpString,
+                                Separator,
+                                directoryList[SelectedMember].memPtr^);
+ 
+            With currentPrefix do
+            begin
+                theString.theString := copy(TmpString,1,length(TmpString));
+                theString.size := length(TmpSTring);
+            end;
+ 
+            moved := True;
+        end;
+    end;
+ 
+    Procedure HandleCloseButton(var moved           :   boolean);
+    var
+        StartChar           : Integer;
+        TmpString           : pString;
+    begin
+        TmpString := copy(currentPrefix.theString.theString,1,currentPrefix.theString.size);
+        StartChar := rindex(TmpString,Separator);
+ 
+        If StartChar > 1 then
+        begin
+            currentPrefix.theString.size := StartChar - 1;
+ 
+            moved := True;
+        end;
+    end;
+
+    Procedure SelectDirectory(    ParentItem    :   longint;
+                              var moved         :   boolean);
+    begin
+        EZGetMenuPath(ParentItem, currentPrefix.theString);
+
+        moved := True;
+    end;
+
+    Procedure CreateNewDirectory;
+    var
+        CreateParms         : createOSDCB;
+        FilePath            : GSOSInString;
+        TmpString           : pString;
+        AlertString         : textBlock;
+        MemberToSelect      : Integer;
+        Junk                : Integer;
+        numOfDirectories    : integer;
+        selectNew           : integer;
+    begin
+        GetlineEditText(directNameItem, TmpString);
+ 
+        If Length(TmpString) > 0 then
+        begin
+            TmpString := concat(copy(currentPrefix.theString.theString,1,
+                                     currentPrefix.theString.size),
+                                Separator,
+                                TmpString);
+ 
+            With FilePath do
+            begin
+                theString := copy(TmpString,1,length(TmpString));
+                size := length(TmpSTring);
+            end;
+ 
+            With CreateParms do
+            begin
+                pcount := 5;
+                pathName := @FilePath;
+                access := $00c3;
+                fileType := DirectoryFile;
+                auxType := 0;
+                storageType := 13
+            end;
+ 
+            CreateGS(CreateParms);
+ 
+            If ToolError = 0
+            then
+                begin
+                    numOfDirectories := GetSubDirectories;
+ 
+                    GetlineEditText(directNameItem, TmpString);
+ 
+                    EZNewList(@EZDrawMember,
+                              1,
+                              @directoryList,
+                              numOfDirectories,
+                              0,
+                              directoryListItem);
+ 
+                    For MemberToSelect := 1 to numOfDirectories do
+                        If TmpString = directoryList[MemberToSelect].memPtr^ then
+                            EZSelectMember(MemberToSelect, DirectoryListItem);
+ 
+                    SetlineEditText('Untitled', True, directNameItem);
+                end
+            else
+                begin
+                    If ToolError = $47  { file exists }
+                    then
+                        begin
+                            AlertString := concat('34:',
+                                                  'Error creating the new ',
+                                                  'directory. That name ',
+                                                  'already exists. Please ',
+                                                  'try another name.:^#6');
+                            Junk := AlertWindow($0001,Nil,@AlertString);
+                        end
+                    else
+                        begin
+                            AlertString := concat('An error has occured ',
+                                                  'while creating the new ',
+                                                  'directory.');
+                            UserAbort := not ProdosError(ToolError, AlertString, True);
+                        end;
+                end;
+        end;
+    end;
+
+    Procedure HandleFileSelection;
+    begin
+        If (BackupHeader.fileList = Nil) or
+           (sourceHasChanged)
+        then
+            begin
+                If BackupHeader.fileList <> Nil then
+                    DeleteFileList;
+
+                If SelectInputDevice then
+                begin
+                    If OpenSaveset then
+                    begin
+                        ObtainWorkBuffer(ord4($00010000));
+                        ReadHeader;
+                        DisposeHandle(WorkBufferHandle);
+
+                        If not UserAbort
+                        then
+                            begin
+                                sourceHasChanged := False;
+                                EditFileList(1);
+                            end
+                        else
+                            UserAbort := False;
+                    end
+                end
+            end
+        else
+            EditFileList(1);
+
+        SetPort(currentPort);
+
+        itemHit := 0;
+    end;
+
+    Procedure HandleDeviceList;
+
+        Procedure CheckMember;
+        var
+            theMember   :   integer;
+        begin
+            theMember := EZNextMember(0, deviceListItem);
+
+            If theMember <> currentMember then
+            begin
+                sourceHasChanged := True;
+                currentMember := theMember;
+            end;
+        end;
+
+    begin
+        case ord(NumOfClicks) of
+            1           :   CheckMember;
+            2           :   HandleFileSelection;
+            otherwise   ;
+        end;
+    end;
+
+    Procedure WarnUser;
+    begin
+        If pref.compressOnRestore then
+        begin
+            Msg := concat('44:Remember that you are unable to cancel ',
+                          'the restoration when compressing.',
+                          ':^#6:#1');
+            If AlertWindow($0001,Nil,@Msg) = 1 then
+                itemHit := 0;
+        end;
+    end;
+ 
+begin
+    with BackupHeader do
+    begin
+        BackupType := False;
+        RootDirName.size := 1;
+        RootDirName.theString := '*';
+
+        ValidJunk := ValidatePathName(RootDirName, currentPrefix, False);
+ 
+        RootDirName := currentPrefix.theString;
+
+        NumOfFiles := 0;
+    end;
+
+    With TmpRect do
+    begin
+        h1 := 15;
+        v1 := 28;
+        h2 := 624;
+        v2 := 174;
+    end;
+
+    RPPort := startupEZDialog(TmpRect,
+                              @RefreshRestoreParms);
+    currentPort := RPPort;
+    SetPort(RPPort);
+
+    with TmpRect do
+    begin
+        h1 := 260;
+        v1 := 59;
+        h2 := 350;
+        v2 := 70;
+    end;
+
+    ctlList[OkItem] := newButtonTemplate(OkItem,
+                                         TmpRect,
+                                         1,
+                                         0,
+                                         0,
+                                         @'Restore',
+                                         Nil,
+                                         Nil);
+ 
+    with TmpRect do
+    begin
+        h1 := 260;
+        v1 := 79;
+        h2 := 350;
+        v2 := 90;
+    end;
+ 
+    ctlList[CancelItem] := newButtonTemplate(CancelItem,
+                                             TmpRect,
+                                             0,
+                                             0,
+                                             0,
+                                             @'Cancel',
+                                             Nil,
+                                             Nil);
+
+    with TmpRect do
+    begin
+        h1 := 11;
+        v1 := 122;
+        h2 := 248;
+        v2 := 134;
+    end;
+ 
+    ctlList[SelectFilesItem] := newButtonTemplate(SelectFilesItem,
+                                                  TmpRect,
+                                                  3,
+                                                  0,
+                                                  0,
+                                                  @'Select Files',
+                                                  Nil,
+                                                  Nil);
+
+    CurrentMember := 1;
+    while CurrentMember < 101 do
+    begin
+        directoryList[CurrentMember].memPtr := Nil;
+        CurrentMember := CurrentMember + 1;
+    end;
+
+    numOfDirectories := GetSubDirectories;
+
+    with TmpRect do
+    begin
+        h1 := 360;
+        v1 := 34;
+        h2 := 573;
+        v2 := 116;
+    end;
+ 
+    ctlList[directoryListItem] := newListTemplate(directoryListItem,
+                                                  TmpRect,
+                                                  0,
+                                                  0,
+                                                  0,
+                                                  numOfDirectories,
+                                                  8,
+                                                  2,
+                                                  1,
+                                                  @EZDrawMember,
+                                                  10,
+                                                  9,
+                                                  @directoryList,
+                                                  Nil);
+
+    numOfDevices := EZGetDeviceTypeList(@deviceList,
+                                        ord4(dcmBlockDevice + dcmRemovableMedia),
+                                        ord4(dcmBlockDevice + dcmRemovableMedia));
+
+    numOfDevices := numOfDevices + 1;
+    with deviceList[numOfDevices] do
+    begin
+        memPtr := @'A GS/OS file.';
+        memFlag := 0;
+        memDevice := -1;
+        memValue := EZDeviceIcon(0);
+    end;
+
+    with TmpRect do
+    begin
+        h1 := 11;
+        v1 := 34;
+        h2 := 222;
+        v2 := 116;
+    end;
+ 
+    ctlList[deviceListItem] := newListTemplate(deviceListItem,
+                                               TmpRect,
+                                               0,
+                                               0,
+                                               0,
+                                               numOfDevices,
+                                               8,
+                                               2,
+                                               1,
+                                               @EZDrawMember,
+                                               10,
+                                               13,
+                                               @deviceList,
+                                               Nil);
+
+    with DestRect do
+    begin
+        h1 := 360;
+        v1 := 122;
+        v2 := v1 + lineEditHeight;
+        h2 := 599;
+    end;
+ 
+    ctlList[directNameItem] := newlineEditTemplate(directNameItem,
+                                                   DestRect,
+                                                   0,
+                                                   0,
+                                                   0,
+                                                   32,
+                                                   @'Untitled');
+
+    with TmpRect do
+    begin
+        h1 := 260;
+        v1 := 29;
+        h2 := 350;
+        v2 := 40;
+    end;
+ 
+    ctlList[nextDiskItem] := newButtonTemplate(nextDiskItem,
+                                               TmpRect,
+                                               0,
+                                               0,
+                                               0,
+                                               @'Disk',
+                                               Nil,
+                                               Nil);
+
+    with TmpRect do
+    begin
+        h1 := 260;
+        v1 := 122;
+        h2 := 350;
+        v2 := 133;
+    end;
+ 
+    ctlList[newFolderItem] := newButtonTemplate(newFolderItem,
+                                                TmpRect,
+                                                0,
+                                                0,
+                                                0,
+                                                @'New Folder',
+                                                Nil,
+                                                Nil);
+
+    parentMenuTemplate := EZNewDirectoryMenu(currentPrefix.theString,
+                                             popUpMenuNumber,
+                                             popupDefault);
+ 
+    with TmpRect do
+    begin
+        h1 := 360;
+        v1 := 20;
+        h2 := 599;
+        v2 := 32;
+    end;
+ 
+    ctlList[parentMenuItem]  := newPopUpTemplate(parentMenuItem,
+                                                 TmpRect,
+                                                 $0030, { 0000 0000 0011 0000 }
+                                                 $0000, { 0000 0000 0000 0000 }
+                                                 0,
+                                                 0,
+                                                 parentMenuTemplate,
+                                                 popupDefault,
+                                                 Nil);
+
+    ctlList[NullItem] := Nil;
+ 
+    NewControl2Junk := NewControl2(RPPort,
+                                   3,
+                                   @ctlList[1]);
+ 
+    EZSortList(directoryListItem);
+    EZSelectMember(1, directoryListItem);
+    EZSortList(deviceListItem);
+    EZSelectMember(1, deviceListItem);
+    CurrentMember := 1;
+
+    itemHit := 0;
+    directoryChanged := False;
+ 
+    Repeat
+        If Not UserAbort then
+            itemHit := EZDialogEvent(NumOfClicks);
+ 
+        Case ord(itemHit) of
+            newFolderItem       :   CreateNewDirectory;
+            nextDiskItem        :   MoveToNextDisk(directoryChanged);
+            okItem              :   WarnUser;
+            directoryListItem   :   If NumOfClicks = 2 then
+                                        HandleOpenButton(directoryListItem,
+                                                         directoryChanged);
+            parentMenuItem      :   SelectDirectory(parentMenuItem,
+                                                    directoryChanged);
+            cancelItem          :   UserAbort := True;
+            selectFilesItem     :   HandleFileSelection;
+            deviceListItem      :   HandleDeviceList;
+            Otherwise           :   ;
+        end;
+
+        If directoryChanged then
+        begin
+            RefreshParentMenu(parentMenuItem, 
+                              popUpTemplatePtr(ctlList[parentMenuItem]),
+                              parentMenuTemplate,
+                              RPPort,
+                              currentPrefix);
+            RefreshDirList(directoryListItem);
+
+            directoryChanged := False;
+        end;
+
+        If itemHit = okItem then
+        begin
+            RestoreTopLevel := copy(currentPrefix.theString.theString,1,currentPrefix.theString.size);
+
+            If sourceHasChanged then
+                HandleFileSelection;
+        end;
+    Until (itemHit = okItem) or
+          (UserAbort);
+
+    currentMember := 1;
+    while currentMember < 101 do
+    begin
+        If deviceList[currentMember].memPtr <> Nil then
+            dispose(directoryList[currentMember].memPtr);
+
+        currentMember := currentMember + 1;
+    end;
+
+    EZDisposePopUp(parentMenuTemplate);
+
+    CloseWindow(RPPort);
+
+    RestoreParametersSet := not UserAbort;
+end;
+
+end.

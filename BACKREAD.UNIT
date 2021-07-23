@@ -1,0 +1,259 @@
+{$ keep 'obj/Backread' }
+Unit Backread;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata, Backasm, Backmisc, Backlow, Backbufr, Backlist;
+
+Function OpenSaveset : Boolean;
+
+Procedure ReadHeader;
+
+implementation
+
+Function OpenSaveset;               { Returns true if the user has elected to }
+const                               { cancel the restoration when asked to    }
+    DiskDev = 0;                     { insert a disk to read from, or when an  }
+    FileDev = 1;                     { error occurs at file opening.           }
+ 
+    Function OpenInputFile : Boolean; { Returns true if an error occured when   }
+    var                               { opening the file.                       }
+        OpenParams      : openOSDCB;
+        FileName        : GSOSInString;
+        ErrCode         : Integer;
+    begin
+        FileName.theString := copy(SavesetLocation.fullpathname, 1,
+                               length(SavesetLocation.fullPathName));
+        FileName.size := length(SavesetLocation.fullPathName);
+ 
+        With OpenParams do
+        begin
+            pcount := 3;
+            pathName := @FileName;
+            requestAccess := readEnableMask;  { Read access }
+        end;
+ 
+        OpenGS(OpenParams);
+ 
+        { ensure that the global write parameters have the correct reference
+          number before finishing off.  that way when writes are done to the
+          file, they will go to the correct file. }
+ 
+        WriteFileParams.refNum := OpenParams.refNum;
+ 
+        If ToolError <> 0
+        then
+            OpenInputFile := False
+        else
+            OpenInputFile := True;
+    end;
+ 
+    Function OpenInputDisk : Boolean;
+    begin
+        NumOfDisks := 0;
+
+        OpenInputDisk := RequestDisk(NumOfDisks);
+    end;
+
+begin
+    With SavesetLocation do
+    begin
+        Case DestType of
+            FileDev     :   OpenSaveset := OpenInputFile;
+            Diskdev     :   OpenSaveset := OpenInputDisk;
+            otherwise   :   OpenSaveset := False;
+        end;
+    end;
+end;
+
+Procedure ReadHeader;
+var
+    TempPtr1            :   Ptr;
+    TempPtr2            :   Ptr;
+    HeaderLength        :   LongInt;
+    RecordEntryLength   :   LongInt;
+    CurEntry            :   FileRecPtr;
+    NumLeft             :   Integer;
+    Count               :   LongInt;
+    RecordEntrySize     :   LongInt;
+    ReadSize            :   longint;
+    MsgBox              :   grafPortPtr;
+    Msg                 :   textBlock;
+    Junk                :   Integer;
+    ListIndex           :   Longint;
+ 
+    Procedure ExtractRecords(NumOfRecords : longint);
+    begin
+        Repeat
+            Count := CopyFromBuffer(Pointer(CurEntry), RecordEntryLength);
+            ByteIndex := ord4(ByteIndex + ord4(FileRecordLength));
+            CurEntry^.Selected := included;
+            CurEntry^.DirEntry.optionList := Nil; { ensure that the        }
+                                                  { deletefilelist routine }
+                                                  { doesn't try disposing  }
+                                                  { of a fictitious option }
+                                                  { list.                  }
+
+            with BackupHeader do
+            begin
+                NumLeft := NumLeft + 1;
+                ListIndex := ord4(NumLeft * ord4(FileRecordLength));
+            end;
+
+            NumOfRecords := NumOfRecords - 1;
+
+            If CurEntry^.NextFile <> Nil then
+            begin
+                CurEntry^.NextFile := Pointer(ord4(ListArea) + ListIndex);
+                CurEntry := CurEntry^.NextFile;
+                CurEntry^.NextFile := pointer(-1); { so we don't end too early }
+            end;
+        until (NumOfRecords = 0) or
+              (CurEntry^.NextFile = Nil);
+    end;
+ 
+    Procedure ComputeHierarchy;
+    var
+        CurEntry        : FileRecPtr;
+        ParEntry        : FileRecPtr;
+        LoopEntry       : FileRecPtr;
+    begin
+        CurEntry := BackupHeader.FileList;
+ 
+        While CurEntry <> Nil do
+        begin
+             With CurEntry^ do
+             begin
+                If DirEntry.FileType = DirectoryFile then
+                begin
+                    ParEntry := ThisDir;
+                    ThisDir := CurEntry;
+                    LoopEntry := CurEntry;
+                    While LoopEntry <> Nil do
+                    begin
+                        If LoopEntry^.ParentDir = ParEntry then
+                            LoopEntry^.ParentDir := CurEntry;
+                        LoopEntry := LoopEntry^.NextFile;
+                    end;
+                end;
+            end;
+            CurEntry := CurEntry^.NextFile;
+        end;
+    end;
+ 
+begin
+    ObtainListBuffer;
+
+    If not UserAbort then
+    begin
+        MsgBox := EZMessageBox('Reading header data ...');
+
+        WaitCursor;
+
+        TempPtr1 := @BackupHeader;
+        TempPtr2 := Pointer(ord4(ord4(@BackupHeader.BackupLength) + ord4(4)));
+ 
+        HeaderLength := ord4(ord4(TempPtr2) - ord4(TempPtr1));
+ 
+        new(BackupHeader.FileList);
+        TempPtr1 := Pointer(BackupHeader.FileList);
+        TempPtr2 := Pointer(ord4(ord4(@BackupHeader.FileList^.FileName) +
+                                 ord4(FileNameLength) + ord4(4)));
+        dispose(BackupHeader.FileList);
+ 
+        RecordEntryLength := ord4(ord4(TempPtr2) - ord4(TempPtr1));
+ 
+        ByteIndex := 0;
+
+        ReadBackup(2);  { Read the first block, so that we can get the }
+                        { header out of it. }
+ 
+        ByteIndex := 0;
+
+        Count := CopyFromBuffer(@BackupHeader, HeaderLength);
+ 
+        If (ListBufferSize < ord4(ord4(BackupHeader.NumLeft) *
+                                  ord4(FileRecordLength))) then
+        begin
+            UserAbort := True;
+
+            Msg := concat('42:There is not enough memory available to carry ',
+                          'out the restoration.:^#0');
+
+            Junk := AlertWindow(0,Nil,@Msg);
+        end;
+
+        If not UserAbort then
+        begin
+            SetHandleSize(ord4(ord4(BackupHeader.NumOfFiles) *
+                               ord4(FileRecordLength)),
+                          ListBufferHandle);
+            ListBufferSize := ord4(ord4(BackupHeader.NumOfFiles) *
+                                   ord4(FileRecordLength));
+            ListArea := Pointer(ListBufferHandle^);
+
+            With BackupHeader do
+            begin
+                FileList := Pointer(ListArea);
+                CurEntry := FileList;
+                ListIndex := 0;
+ 
+                RecordEntrySize := ord4(NumOfFiles) * ord4(FileRecordLength) div
+                                   ord4(BlockByteCount);
+                If (RecordEntrySize * ord4(BlockByteCount)) <
+                      ord4(NumOfFiles) * ord4(FileRecordLength) then
+                    RecordEntrySize := ord4(RecordEntrySize + ord4(1));
+ 
+                NumLeft := 0;
+
+                While (RecordEntrySize > 0) and
+                      (Not UserAbort) do
+                begin
+                    If RecordEntrySize > ord4(WorkBufferSize div
+                                              ord4(BlockByteCount))
+                    then
+                        ReadSize := ord4(WorkBufferSize div
+                                         ord4(BlockByteCount))
+                    else
+                        ReadSize := ord4(RecordEntrySize);
+ 
+                    ByteIndex := 0;
+
+                    ReadBackup(ReadSize);
+
+                    ByteIndex := 0;
+
+                    If Not UserAbort then
+                    begin
+                        ExtractRecords(ord4(ReadSize * 4));  { turn the data into pascal }
+                                                       { structures }
+
+                        RecordEntrySize := ord4(ord4(RecordEntrySize -
+                                                ord4(ReadSize)));
+                    end;
+                end;
+            end;
+        end;
+ 
+        If Not UserAbort then
+            ComputeHierarchy;
+
+        CloseDialog(MsgBox);
+
+        InitCursor;
+
+        If SavesetLocation.DestType = 0 then
+            EZEjectDisk(SavesetLocation.deviceNum);
+    end;
+end;
+
+end.

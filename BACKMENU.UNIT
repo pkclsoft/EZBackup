@@ -1,0 +1,330 @@
+{$ keep 'obj/Backmenu' }
+Unit Backmenu;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata, Backmisc, Backback, BackList, Backrest, Backlow, Backcat,
+     Backpref, Backbad, Backdisk;
+
+Procedure HandleMenu(    LastEvent : EventRecord;
+                     var Done      : Boolean);
+
+implementation
+
+{$ segment 'Events'             }
+
+Const
+{$ copy 'BackTConst.Inc' }
+
+Procedure AboutBackUp;
+var
+    MsgResource     :   handle;
+    MsgLength       :   IntegerPtr;
+    offset          :   IntegerPtr;
+    Msg             :   textBlock;
+    AboutPort       :   grafPortPtr;
+    AboutRect       :   rect;
+    editEvent       :   EventRecord;
+    eventHandled    :   boolean;
+    event           :   longint;
+
+    tempHandle      :   handle;
+    approxFiles     :   longint;
+    minBuffer       :   longint;
+begin
+    minBuffer := ord4(131072);
+    tempHandle := EZBuffer(minBuffer,minBuffer+ord4(1024),ord4(1024));
+
+    CompactMem;
+    approxFiles := maxBlock div ord4(FileRecordLength);
+    
+    MsgResource := LoadResource(rProductTitle, 1);
+
+    if ToolError = 0 then
+    begin
+        WaitCursor;
+
+        MsgLength := integerPtr(MsgResource^);
+
+        setRect(AboutRect, 150, 38, 490, 161);
+
+        AboutPort := startupEZDialog(AboutRect, Nil);
+
+        setRect(AboutRect, 10, 0, 330, 100);
+
+        LETextBox2(pointer(ord4(MsgResource^) + ord4(2)), 
+                   MsgLength^, AboutRect, 1);
+
+        MsgResource := LoadResource(rAppSpecific, 1);
+
+        if ToolError = 0 then
+        begin
+            MsgLength := integerPtr(MsgResource^);
+            offset := integerPtr(ord4(MsgResource^) + ord4(2));
+            BlockMove(pointer(ord4(MsgResource^) + ord4(4)),
+                      @Msg[1], ord4(MsgLength^));
+
+            Long2Dec(approxFiles, @Msg[Offset^+1], 6, False);
+
+            setRect(AboutRect, 10, 105, 330, 120);
+
+            LETextBox2(@Msg, MsgLength^, AboutRect, 1);
+        end;
+
+        InitCursor;
+
+        Repeat
+            event := EZAnyEvent(editEvent, eventHandled, False);
+        Until (event = mouseUpEvt) and not eventHandled;
+
+        CloseWindow(AboutPort);
+    end;
+
+    If tempHandle <> Nil then
+        DisposeHandle(tempHandle);
+
+    CompactMem;
+end;
+
+Procedure SharewareNotice;
+var
+    MsgResource     :   handle;
+    MsgLength       :   IntegerPtr;
+    Msg             :   packed array [1..600] of char;
+    sharewarePort   :   grafPortPtr;
+    sharewareRect   :   rect;
+    editEvent       :   EventRecord;
+    eventHandled    :   boolean;
+    event           :   longint;
+
+begin
+    CompactMem;
+    
+    MsgResource := LoadResource(rProductTitle, 2);
+
+    if ToolError = 0 then
+    begin
+        WaitCursor;
+
+        MsgLength := integerPtr(MsgResource^);
+
+        setRect(sharewareRect, 100, 24, 540, 187);
+
+        sharewarePort := startupEZDialog(sharewareRect, Nil);
+
+        setRect(sharewareRect, 10, 0, 430, 160);
+
+        LETextBox2(pointer(ord4(MsgResource^) + ord4(2)),
+                   MsgLength^, sharewareRect, 1);
+
+        InitCursor;
+
+        Repeat
+            event := EZAnyEvent(editEvent, eventHandled, False);
+        Until (event = mouseUpEvt) and not eventHandled;
+
+        CloseWindow(sharewarePort);
+    end;
+
+    CompactMem;
+end;
+
+Procedure HandleMenu;
+var
+    Junk    : Integer;
+    MenuNum : Integer;
+ 
+    Procedure SetupOperation;
+    begin
+        with SavesetLocation do
+        begin
+            Title := '';
+            DestType := 2;
+            FullPathName := '';
+            FileName := 'Untitled';
+            FirstBlock := 0;
+            UsedBlocks := 0;
+            CurrentBlock := 0;
+            DeviceNum := 0;
+            MemberNum := 0;
+            Valid := False;
+        end;
+
+        BackupHeader.FileList := Nil;
+        BackupHeader.Selected := notSelected;
+
+        UserAbort := False;
+
+        overridePref := False;
+
+        setPreferences;
+    end;
+ 
+    Procedure doBackup;
+    var
+        Msg             :   textBlock;                  {alert Message}
+        Status          :   Boolean;
+        AlertJunk       :   Integer;
+        fileName        :   GSOSInString;
+        destroyParms    :   destroyOSDCB;
+    begin
+        SetupOperation;
+
+        programMode := backupMode;
+
+        Status := False;
+
+        If BackupParametersSet then   { Returns TRUE if ready to commence   }
+        begin
+            With BackupHeader do
+            begin
+                If FileList = Nil then
+                    UserAbort := GetFileList(BackupType, included);
+
+                If not UserAbort then
+                begin
+                    ObtainWorkBuffer(MaxBlock);
+
+                    If not UserAbort then
+                    begin
+                        Status := StartBackup; { Returns true if error }
+ 
+                        If Status or UserAbort
+                        then
+                            begin
+                                Msg := '32:The backup has been cancelled.:^#0';
+
+                                If pref.deletePartialBackup then
+                                begin
+                                    fileName.theString := copy(SavesetLocation.fullpathname, 1,
+                                                           length(SavesetLocation.fullPathName));
+                                    fileName.size := length(SavesetLocation.fullPathName);
+
+                                    with destroyParms do
+                                    begin
+                                        pcount := 1;
+                                        pathName := @fileName;
+                                    end;
+
+                                    DestroyGS(destroyParms);
+                                end;
+                            end
+                        else
+                            Msg := concat('23:The backup has successfully ',
+                                          'completed.:^#0');
+ 
+                        AlertJunk := AlertWindow(0,Nil,@Msg);
+
+                        DisposeHandle(WorkBufferHandle);
+                    end;
+                end;
+            end;
+        end;
+
+        DeleteFileList;
+    end;
+
+    Procedure doRestore;
+    var
+        Msg         : textBlock;                  {alert Message}
+        AlertJunk   : Integer;
+    begin
+        SetupOperation;
+
+        programMode := restoreMode;
+
+        Msg := '22:The Restoration has completed successfully.:^#0';
+
+        If RestoreParametersSet then
+        begin
+            If BackupHeader.NumOfFiles = 0
+            then
+                Msg := concat('72:No files were selected for restoration, ',
+                              'operation cancelled.:^#0')
+            else
+                begin
+                    ObtainWorkBuffer(MaxBlock);
+
+                    If Not UserAbort then
+                    begin
+                        DoRestoration;
+
+                        DisposeHandle(WorkBufferHandle);
+                    end;
+                end;
+        end;
+
+        DeleteFileList;
+ 
+        If UserAbort then
+            Msg := '22:The Restoration has been cancelled.:^#0';
+ 
+        AlertJunk := AlertWindow($0000,Nil,@Msg);
+ 
+        CloseSaveset;
+    end;
+
+    Procedure doCatalog;
+    begin
+        SetupOperation;
+
+        programMode := viewMode;
+
+        If CatalogParametersSet then  { Returns TRUE if valid disk selected }
+            catalogSaveset;
+    end;
+
+    Procedure doAddition;
+    begin
+        SetupOperation;
+
+        programMode := viewMode;
+
+        If CatalogParametersSet then begin { Returns TRUE if valid disk selected }
+          (*
+            All we should have to do is set up the headers so that the starting
+            positions are correct.
+
+            Read the old header in, and determine where to place the new file
+            records in the FileList disk.  Then compute the position of the
+            first file to be added to the saveset.
+
+            Bring up the standard backup window, and let the user carry out the
+            backup as normally.
+          *)
+        end;            
+    end;
+
+begin
+    UserAbort := False;
+ 
+    MenuNum := ConvL2I(LastEvent.TaskData).lsw;
+ 
+    case MenuNum of
+        AppleAbout          :   AboutBackUp;
+        AppleShareware      :   SharewareNotice;
+        FilePreferences     :   changePreferences;
+        FileQuit            :   Done := True;
+        Backup              :   doBackup;
+(*        AddToBackup         :   doAddition;  *)
+        Restore             :   doRestore;
+        Catalog             :   doCatalog;
+        SpecialBadBlockChk  :   DoBadBlockCheck;
+        SpecialFormatErase  :   FormatEraseDisk;
+        SpecialOptimize     :   Unavailable;
+        otherwise       :   ;
+    end;
+ 
+    HilIteMenu(False,ConvL2I(LastEvent.TaskData).msw);
+end;
+
+end.

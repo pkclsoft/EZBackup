@@ -1,0 +1,135 @@
+{$ keep 'obj/Backsave' }
+Unit BAcksave;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata;
+
+Function SelectSourceFile : Boolean;
+
+Function SelectDestinationFile : Boolean;
+
+implementation
+
+Function SelectSourceFile;
+var
+    MyReply        : replyRecord5_0;
+    TList          : typeList5_0;
+    fullPathHndl   : GSOSOutStringHandle;
+    textHandle     : handle;
+begin
+    TList.NumEntries := 2;
+    TList.fileAndAuxTypes[1].flags := $8000;
+    TList.fileAndAuxTypes[1].fileType := $e0;
+    TList.fileAndAuxTypes[1].auxType := ord4($00008006);
+
+    MyReply.good := 0;
+    MyReply.fileType := 0;
+    MyReply.auxFileType := 0;
+    MyReply.nameVerb := $0003;
+    MyReply.pathVerb := $0003;
+
+    SFGetFile2(30,
+               20,
+               0,
+               @'Use which saveset ...',
+               Nil,
+               TList,
+               MyReply);
+
+    With MyReply, SavesetLocation do
+    begin
+        If ord(Good) = 0
+        then
+            Valid := False
+        else
+            Valid := True;
+
+        If Valid then
+        begin
+            fullPathHndl := GSOSOutStringHandle(pathRef);
+            with fullPathHndl^^ do
+                fullPathName := copy(theString.theString,1,theString.size);
+
+            fullPathHndl := GSOSOutStringHandle(nameRef);
+            with fullPathHndl^^ do
+                FileName := copy(theString.theString,1,theString.size);
+
+            DestType := 1;
+        end;
+
+        textHandle := handle(MyReply.pathRef);
+        disposeHandle(textHandle);
+
+        textHandle := handle(MyReply.nameRef);
+        disposeHandle(textHandle);
+    end;
+
+    SelectSourceFile := SavesetLocation.Valid;
+end;
+
+Function SelectDestinationFile;
+var
+    MyReply         : replyRecord5_0;
+    defName         : GSOSInString;
+    fullPathHndl    : GSOSOutStringHandle;
+    textHandle      : handle;
+begin
+    With SavesetLocation do
+    begin
+        defName.size := length(FileName);
+        defName.theString := FileName;
+
+        MyReply.good := 0;
+        MyReply.fileType := 0;
+        MyReply.auxFileType := 0;
+        MyReply.nameVerb := $0003;
+        MyReply.pathVerb := $0003;
+
+        SFPutFile2(30,
+                   20,
+                   0,
+                   @'Save saveset as:',
+                   0,
+                   @defName,
+                   MyReply);
+
+        If ord(MyReply.Good) = 0
+        then
+            Valid := False
+        else
+            Valid := True;
+
+        If Valid then
+        begin
+            fullPathHndl := GSOSOutStringHandle(MyReply.pathRef);
+            with fullPathHndl^^ do
+                fullPathName := copy(theString.theString,1,theString.size);
+
+            fullPathHndl := GSOSOutStringHandle(MyReply.nameRef);
+            with fullPathHndl^^ do
+                FileName := copy(theString.theString,1,theString.size);
+
+            DestType := 1;
+        end;
+
+        textHandle := handle(MyReply.pathRef);
+        disposeHandle(textHandle);
+
+        textHandle := handle(MyReply.nameRef);
+        disposeHandle(textHandle);
+    end;
+
+    SelectDestinationFile := SavesetLocation.Valid;
+end;
+
+end.

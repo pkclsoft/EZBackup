@@ -1,0 +1,32 @@
+{$ keep 'obj/Backbad' }
+Unit Backbad;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata, Backmisc;
+
+Procedure DoBadBlockCheck;
+
+implementation
+
+{$ segment 'Disk'               }
+
+Procedure DoBadBlockCheck;
+{ This procedure will ask the user to specify a block device, and will then   }
+{ procede to check each block on the device for any bad blocks.  Any found    }
+{ are placed within a file called BAD.BLOCKS in the root directory on the     }
+{ device.                                                                     }
+begin
+    Unavailable;
+end;
+
+end.

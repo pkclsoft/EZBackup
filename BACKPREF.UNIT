@@ -1,0 +1,408 @@
+{$ keep 'obj/BackPref' }
+Unit Backpref;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata, Backmisc;
+
+Procedure changePreferences;
+
+Procedure setPreferences;
+
+implementation
+
+Procedure changePreferences;
+const
+    OkItem              = 1;
+    CancelItem          = 2;
+    overwriteOldItem    = 3;
+    askOverwriteItem    = 4;
+    overwriteAllItem    = 5;
+    compressItem        = 6;
+    clearBackupBitItem  = 7;
+    verifyDisksItem     = 8;
+    backupTextItem      = 9;
+    restoreTextItem     = 10;
+    deletePartialItem   = 11;
+    saveItem            = 12;
+    miscTextItem        = 13;
+    redGreenItem        = 14;
+    NullItem            = 15;
+
+    backupPrefText      = 1;    { Resource ID's of heading text }
+    restorePrefText     = 2;
+    miscPrefText        = 3;
+
+var
+    CPPort              : grafPortPtr;
+
+    itemHit             : longint;
+    NumOfClicks         : integer;
+
+    TmpRect             : rect;
+
+    ctlList             : array [1..NullItem] of ptr;
+
+    NewControl2Junk     : ctlRecHndl;
+    ValidJunk           : Boolean;
+
+    Msg                 : textBlock;
+    Junk                : Integer;
+
+    theHandle           : handle;
+
+    Procedure ToggleCompression;
+    begin
+        If CheckBoxOn(compressItem)
+        then
+            begin
+                SetRadioButton(On, overwriteAllItem);
+                Deactivate(overwriteOldItem);
+                Deactivate(askOverwriteItem);
+            end
+        else
+            begin
+                Activate(overwriteOldItem);
+                Activate(askOverwriteItem);
+            end;
+    end;
+ 
+begin
+    With TmpRect do
+    begin
+        h1 := 170;
+        v1 := 20;
+        h2 := 470;
+        v2 := 182;
+    end;
+
+    CPPort := startupEZDialog(TmpRect,
+                              @EZDrawControls);
+    currentPort := CPPort;
+    SetPort(CPPort);
+
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 5;
+        h2 := 290;
+        v2 := 15;
+    end;
+
+    ctlList[backupTextItem] := newStatTextTemplate(backupTextItem,
+                                                   tmpRect,
+                                                   0,
+                                                   2,
+                                                   0,
+                                                   Pointer(backupPrefText),
+                                                   0,
+                                                   leJustLeft);
+
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 20;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[verifyDisksItem] := newCheckBoxTemplate(verifyDisksItem,
+                                                    TmpRect,
+                                                    0,
+                                                    0,
+                                                    0,
+                                                    @'Verify disks',
+                                                    integer(pref.verifyDisks),
+                                                    Nil,
+                                                    Nil);
+
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 30;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[deletePartialItem] := newCheckBoxTemplate(deletePartialItem,
+                                                      TmpRect,
+                                                      0,
+                                                      0,
+                                                      0,
+                                                      @'Delete partial backup files',
+                                                      integer(pref.deletePartialBackup),
+                                                      Nil,
+                                                      Nil);
+
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 45;
+        h2 := 290;
+        v2 := 55;
+    end;
+
+    ctlList[restoreTextItem] := newStatTextTemplate(restoreTextItem,
+                                                    tmpRect,
+                                                    0,
+                                                    2,
+                                                    0,
+                                                    Pointer(restorePrefText),
+                                                    0,
+                                                    leJustLeft);
+
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 60;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[overwriteOldItem] := newRadioButtonTemplate(overwriteOldItem,
+                                                        TmpRect,
+                                                        1,
+                                                        0,
+                                                        0,
+                                                        @'Overwrite old files only',
+                                                        integer(pref.overwriteOldFiles),
+                                                        Nil,
+                                                        Nil);
+
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 70;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[askOverwriteItem] := newRadioButtonTemplate(askOverwriteItem,
+                                                        TmpRect,
+                                                        1,
+                                                        0,
+                                                        0,
+                                                        @'Ask before overwriting',
+                                                        integer(pref.overwritePrompt),
+                                                        Nil,
+                                                        Nil);
+
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 80;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[overwriteAllItem] := newRadioButtonTemplate(overwriteAllItem,
+                                                        TmpRect,
+                                                        1,
+                                                        0,
+                                                        0,
+                                                        @'Overwrite all files',
+                                                        integer(pref.overwriteAllFiles),
+                                                        Nil,
+                                                        Nil);
+
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 90;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[compressItem] := newCheckBoxTemplate(compressItem,
+                                                 TmpRect,
+                                                 0,
+                                                 0,
+                                                 0,
+                                                 @'Compress upon restoration',
+                                                 integer(pref.compressOnRestore),
+                                                 Nil,
+                                                 Nil);
+
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 100;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[clearBackupBitItem] := newCheckBoxTemplate(clearBackupBitItem,
+                                                       TmpRect,
+                                                       0,
+                                                       0,
+                                                       0,
+                                                       @'Clear backup bits',
+                                                       integer(pref.backupBitsToBeCleared),
+                                                       Nil,
+                                                       Nil);
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 115;
+        h2 := 290;
+        v2 := 125;
+    end;
+
+    ctlList[miscTextItem] := newStatTextTemplate(miscTextItem,
+                                                 TmpRect,
+                                                 0,
+                                                 2,
+                                                 0,
+                                                 Pointer(miscPrefText),
+                                                 0,
+                                                 leJustLeft);
+
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 130;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[redGreenItem] := newCheckBoxTemplate(redGreenItem,
+                                                 TmpRect,
+                                                 0,
+                                                 0,
+                                                 0,
+                                                 @'I can see Red on Green',
+                                                 integer(pref.redOnGreen),
+                                                 Nil,
+                                                 Nil);
+
+    with TmpRect do
+    begin
+        h1 := 10;
+        v1 := 145;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[OkItem] := newButtonTemplate(OkItem,
+                                         TmpRect,
+                                         0,
+                                         0,
+                                         0,
+                                         @' Ok ',
+                                         Nil,
+                                         Nil);
+ 
+    with TmpRect do
+    begin
+        h1 := 100;
+        v1 := 145;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[saveItem] := newButtonTemplate(saveItem,
+                                           TmpRect,
+                                           1,
+                                           0,
+                                           0,
+                                           @'Save',
+                                           Nil,
+                                           Nil);
+
+    with TmpRect do
+    begin
+        h1 := 210;
+        v1 := 145;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[CancelItem] := newButtonTemplate(CancelItem,
+                                             TmpRect,
+                                             0,
+                                             0,
+                                             0,
+                                             @'Cancel',
+                                             Nil,
+                                             Nil);
+
+    ctlList[NullItem] := Nil;
+ 
+    NewControl2Junk := NewControl2(CPPort, 3, @ctlList[1]);
+ 
+    ToggleCompression;
+
+    If not preferencesSaveable then begin
+        Deactivate(saveItem);
+    end;
+
+    EZDrawControls;
+
+    itemHit := 0;
+ 
+    Repeat
+        If Not UserAbort then begin
+            itemHit := EZDialogEvent(NumOfClicks);
+        end;
+ 
+        Case ord(itemHit) of
+            compressItem        :   ToggleCompression;
+            cancelItem          :   UserAbort := True;
+            Otherwise       :   ;
+        end;
+    Until (itemHit = okItem) or
+          (itemHit = saveItem) or
+          (UserAbort);
+
+    If (itemHit = okItem) or
+       (itemHit = saveItem) then
+    begin
+        pref.compressOnRestore := CheckBoxOn(compressItem);
+        pref.backupBitsToBeCleared := CheckBoxOn(clearBackupBitItem);
+        pref.overwriteOldFiles := RadioButtonOn(overwriteOldItem);
+        pref.overwriteAllFiles := RadioButtonOn(overwriteAllItem);
+        pref.overwritePrompt := RadioButtonOn(askOverwriteItem);
+        pref.verifyDisks := CheckBoxOn(verifyDisksItem);
+        pref.redOnGreen := CheckBoxOn(redGreenItem);
+
+        If itemHit = saveItem then
+        begin
+            RemoveResource(rPreferences, 1);
+
+            theHandle := NewHandle(ord4(16), UserID, 
+                                    (attrLocked + attrFixed + attrNoSpec), Nil);
+
+            BlockMove(@pref, theHandle^, ord4(16));
+
+            AddResource(theHandle,
+                        (attrLocked + attrFixed + resPreLoad + attrNoSpec),
+                        rPreferences, 1);
+        end;
+    end;
+
+    CloseWindow(CPPort);
+
+    setPreferences;
+end;
+
+PROCEDURE setPreferences;
+BEGIN
+  WITH pref DO BEGIN
+    IF redOnGreen THEN BEGIN
+      redPattern := redPatternHandle^;
+    END ELSE BEGIN
+      redPattern := yellowPatternHandle^;
+    END;
+  END;
+END (* setPreferences *);
+
+end.

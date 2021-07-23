@@ -1,0 +1,895 @@
+{$ keep 'obj/Backlow' }
+Unit Backlow;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata, Backmisc;
+
+Function RequestNewDisk(DiskNumber : Integer) : Boolean;
+
+Function RequestDisk(DiskNumber : Integer) : Boolean;
+
+Procedure CloseSaveset;
+
+Function SetupFileServer(deviceID : integer) : Boolean;
+
+implementation
+
+{$ segment 'LowLevel'           }
+
+Function RequestNewDisk;
+{ Returns true if disk inserted and ready, false if not. }
+const
+    cancelItem              =   10;
+    okItem                  =   11;
+    formatItem              =   12;
+    NullItem                =   4;
+
+    backupDialogCancelItem  =   1;
+var
+    DiskText            :   pString;
+    NewVolName          :   GSOSInString;
+    DiskReady           :   Boolean;
+    theError            :   integer;
+    ErrorString         :   pString;
+    ignoreOnlineStatus  :   Boolean;
+    tryFormat           :   Boolean;
+    formatAvailable     :   Boolean;
+
+    itemHit             :   longint;
+    tmpRect             :   rect;
+    onlineDisk          :   Boolean;
+    ctlList             :   array [1..NullItem] of ptr;
+    NewControl2Junk     :   ctlRecHndl;
+    NumOfClicks         :   Integer;
+ 
+    procedure setDefaultMessage;
+    begin
+        theMessage := concat('Please insert the backup disk named "',
+                             DiskText,'".');
+    end;
+
+    Function PrepareNewDisk : Boolean;
+    { Called when a new disk has been accepted, or formatted.  It will  }
+    { clear the volume bit map to zeros to ensure that the operating    }
+    { system does not try to create any files on it.  It then sets the  }
+    { block counter to one block past the volume bit map in preparation }
+    { for writing.                                                      }
+    var
+        FormatParms     :   formatOSDCB;
+        Count           :   Integer;
+        ZeroBuffer      :   array [0..BlockByteCount] of Byte;
+        DWriteParams    :   devReadWriteOSDCB;
+    begin
+        With FormatParms do
+        begin
+            pcount := 4;
+            devName := @SavesetLocation.Device.theString.size;
+            volName := @NewVolName;
+            reqFileSysID := fsProDOS;
+        end;
+ 
+        For Count := 0 to 511 do
+            ZeroBuffer[Count] := 0;
+ 
+        With SavesetLocation do
+        begin
+            With DWriteParams do
+            begin
+                pcount := 6;
+                devNum := DeviceNum;
+                buffer := @ZeroBuffer;
+                requestCount := BlockByteCount;
+                blockSize := BlockByteCount;
+            end;
+        end;
+ 
+        EraseDiskGS(FormatParms);
+
+        If ToolError = $2b
+        then
+            begin
+                theMessage := concat('The disk is write protected. ',
+                                     'Please insert a non-write protected disk.');
+                EZEjectDisk(SavesetLocation.DeviceNum);
+                PrepareNewDisk := False;
+            end
+        else
+            begin
+                setDefaultMessage;
+
+                If ToolError = 0
+                then
+                    begin
+                        With SavesetLocation do
+                        begin
+                            For Count := 6 to (FirstBlock - 1) do
+                            begin
+                                DWriteParams.startingBlock := Count;
+                                DWriteGS(DWriteParams);
+                            end;
+ 
+                            CurrentBlock := FirstBlock;
+
+                            If pref.verifyDisks
+                            then
+                                begin
+                                    If EZVerifyDisk(deviceNum)
+                                    then
+                                        PrepareNewDisk := True
+                                    else
+                                        begin
+                                            theMessage := concat('The disk contains some bad blocks. ',
+                                                                 'Insert another disk or select Initialise.');
+                                            formatAvailable := True;
+                                            PrepareNewDisk := False;
+                                        end;
+                                end
+                            else
+                                PrepareNewDisk := True;
+                        end;
+                    end
+                else
+                    PrepareNewDisk := False
+            end;
+    end;
+
+    Function checkDisk : Boolean;
+    var
+        dInfoParms  :   dInfoOSDCB;
+        volumeParms :   volumeOSDCB;
+        volumeName  :   GSOSOutString;
+        VolumeText  :   pString;
+        FormatParms :   formatOSDCB;
+        overMessage :   textBlock;
+    begin
+        SavesetLocation.Device.maxSize := GSOSNameLength + 4;
+
+        with dInfoParms do
+        begin
+            pcount :=  4;
+            devNum := SavesetLocation.deviceNum;
+            devName := @SavesetLocation.Device;
+        end;
+
+        DInfoGS(dInfoParms);
+
+        volumeName.maxSize := GSOSNameLength + 4;
+
+        with volumeParms do
+        begin
+            pcount := 3;
+            devName := @SavesetLocation.Device.theString.theString;
+            volName := @volumeName;
+        end;
+
+        VolumeGS(volumeParms);
+
+        If (ToolError = $27) or { I/O Error }
+           (tryFormat)          { bad blocks were found on the last attempt }
+        then
+            begin           { I/O error. Format the disk.             }
+                With FormatParms do
+                begin
+                    pcount := 4;
+                    devName := @SavesetLocation.Device.theString.size;
+                    volName := @NewVolName;
+                    reqFileSysID := fsProDOS;
+                end;
+ 
+                FormatGS(FormatParms);
+ 
+                If ToolError <> 0
+                then
+                    begin
+                        EZEjectDisk(SavesetLocation.DeviceNum);
+                        CheckDisk := False;
+                        theMessage := 'Format operation failed, please insert another disk.';
+                    end
+                else
+                    begin
+                        VolumeGS(volumeParms);
+
+                        If volumeParms.totalBlocks <> savesetLocation.DeviceDescr.totalBlocks
+                        then
+                            begin
+                                theMessage := 'Disk formatted to incorrect size, please insert another.';
+                                EZEjectDisk(SavesetLocation.DeviceNum);
+                                CheckDisk := False;
+                            end
+                        else
+                            CheckDisk := PrepareNewDisk;
+                    end;
+            end
+        else
+            begin
+                If ToolError = $00
+                then
+                    begin
+                        If volumeParms.totalBlocks <> savesetLocation.DeviceDescr.totalBlocks
+                        then
+                            begin
+                                theMessage := 'Disk inserted is incorrect size, please insert another.';
+                                EZEjectDisk(SavesetLocation.DeviceNum);
+                                CheckDisk := False;
+                            end
+                        else
+                            begin
+                                VolumeText := copy(volumeName.theString.theString, 1,
+                                                   volumeName.theString.size);
+ 
+                                If DiskText = VolumeText
+                                then
+                                    CheckDisk := PrepareNewDisk
+                                else
+                                    begin
+                                        overMessage := concat('54', chr(1),
+                                                              'Overwrite the disk called "',
+                                                              VolumeText, '" ?',chr(1),'#2',
+                                                              chr(1),'^#3');
+ 
+                                        If AlertWindow($0001,Nil,@overMessage) = 0
+                                        then
+                                            CheckDisk := PrepareNewDisk
+                                        else
+                                            begin
+                                                CheckDisk := False;
+                                                EZEjectDisk(SavesetLocation.DeviceNum);
+                                                setDefaultMessage;
+                                            end;
+                                    end;
+                            end;
+                    end
+                else
+                    begin
+                        setDefaultMessage;
+
+                        If ToolError = $2f { Device not online (no disk in drive) }
+                        then
+                            CheckDisk := False
+                        else
+                            begin
+                                theError := ToolError;
+                                CheckDisk := False;
+                                EZEjectDisk(SavesetLocation.DeviceNum);
+                            end;
+                    end;
+            end;
+    end;
+
+    Function ScanDevices : Boolean;
+    var
+        volumeFound     :   Boolean;
+        diskFound       :   Boolean;
+        oneOnly         :   Boolean;
+        doneLoop        :   Boolean;
+        deviceNumber    :   Integer;
+        startDevice     :   Integer;
+    begin
+        volumeFound := False;
+        diskFound := False;
+
+        with SavesetLocation do
+        begin
+            deviceNumber := EZNextDevice(deviceNum, deviceDescr.deviceID);
+
+            If deviceNum > 0 then
+                startDevice := deviceNum
+            else
+                startDevice := deviceNumber;
+
+            doneLoop := False;
+
+            Repeat
+                volumeFound := EZCheckDevice(deviceNumber, newVolName);
+
+                If not volumeFound then
+                begin
+                    deviceNumber := EZNextDevice(deviceNumber, deviceDescr.deviceID);
+
+                    If deviceNumber = startDevice then
+                        doneLoop := True
+                end;
+            Until doneLoop or
+                  volumeFound;
+
+            If doneLoop then
+                volumeFound := EZCheckDevice(deviceNumber, newVolName);
+
+            If volumeFound
+            then
+                begin
+                    If (deviceNum <> deviceNumber) and
+                       (deviceNum <> 0) then
+                        EZEjectDisk(DeviceNum);
+
+                    deviceNum := deviceNumber;
+                end
+            else
+                begin
+                    deviceNumber := EZNextDevice(deviceNum, deviceDescr.deviceID);
+
+                    Repeat
+                        If ignoreOnlineStatus
+                        then
+                            diskFound := True
+                        else
+                            diskFound := EZIsOnline(deviceNumber);
+
+                        If not diskFound then
+                            deviceNumber := EZNextDevice(deviceNumber, deviceDescr.deviceID);
+                    Until (deviceNumber = startDevice) or
+                          diskFound;
+
+                    If not diskFound then
+                    begin
+                        If ignoreOnlineStatus
+                        then
+                            diskFound := True
+                        else
+                            diskFound := EZIsOnline(deviceNumber);
+                    end;
+
+                    If diskFound then
+                        deviceNum := deviceNumber;
+                end;
+        end;
+
+        If volumeFound or diskFound
+        then
+            ScanDevices := checkDisk
+        else
+            ScanDevices := False;
+    end;
+
+begin
+    If DiskNumber <> 0
+    then
+        begin
+            Int2Dec(DiskNumber, @DiskText[1], 3, False);
+            DiskText[0] := chr(3);
+            If DiskText[1] = ' ' then
+                DiskText[1] := '0';
+            If DiskText[2] = ' ' then
+                DiskText[2] := '0';
+            DiskText := concat(':Backup.', DiskText);
+        end
+    else
+        DiskText := ':Backup.FileList';
+
+    With NewVolName do
+    begin
+        theString := DiskText;
+        size := length(DiskText);
+    end;
+ 
+    setDefaultMessage;
+    showMessagePort(False);
+
+    with TmpRect do
+    begin
+        h1 := 450;
+        v1 := 14;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[1] := newButtonTemplate(cancelItem,
+                                    TmpRect,
+                                    0,
+                                    0,
+                                    0,
+                                    @'Cancel',
+                                    Nil,
+                                    Nil);
+ 
+    with TmpRect do
+    begin
+        h1 := 150;
+        v1 := 14;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[3] := newButtonTemplate(formatItem,
+                                    TmpRect,
+                                    0,
+                                    0,
+                                    0,
+                                    @' Initialise ',
+                                    Nil,
+                                    Nil);
+ 
+    with TmpRect do
+    begin
+        h1 := 350;
+        v1 := 14;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[2] := newButtonTemplate(okItem,
+                                    TmpRect,
+                                    1,
+                                    0,
+                                    0,
+                                    @' Ok ',
+                                    Nil,
+                                    Nil);
+ 
+    ctlList[NullItem] := Nil;
+ 
+    NewControl2Junk := NewControl2(messagePort, 3, @ctlList[1]);
+
+    formatAvailable := False;
+
+    refreshMessage;
+ 
+    ignoreOnlineStatus := False;
+    tryFormat := False;
+
+    With SavesetLocation do
+        If EZPollDevices(deviceNum, deviceDescr.deviceID) then
+            DiskReady := ScanDevices
+        else
+            DiskReady := False;
+
+    while (not DiskReady) and
+          (not UserAbort) do
+    begin
+        onlineDisk := False;
+
+        with SavesetLocation do
+            If not formatAvailable then
+                onlineDisk := EZPollDevices(deviceNum, deviceDescr.deviceID);
+
+        ignoreOnlineStatus := False;
+        itemHit := 0;
+        tryFormat := False;
+
+        If not onlineDisk or formatAvailable then
+        begin
+            ShowWindow(messagePort);
+            SelectWindow(messagePort);
+            Activate(cancelItem);
+            Activate(okItem);
+            Deactivate(backupDialogCancelItem);
+
+            If formatAvailable
+            then
+                Activate(formatItem)
+            else
+                Deactivate(formatItem);
+
+            while (not onlineDisk) and
+                  (not UserAbort) and
+                  (itemHit <> okItem) and
+                  (not tryFormat) do
+            begin
+                with SavesetLocation do
+                    If not formatAvailable then
+                        onlineDisk := EZPollDevices(deviceNum, deviceDescr.deviceID);;
+
+                itemHit := EZDialogEvent(NumOfClicks);
+
+                case ord(itemHit) of
+                    cancelItem  :   UserAbort := True;
+                    okItem      :   begin
+                                        onlineDisk := True;
+                                        ignoreOnlineStatus := True;
+                                    end;
+                    formatItem  :   tryFormat := True;
+                    otherwise   ;
+                end;
+            end;
+
+            HideWindow(messagePort);
+        end;
+
+        If formatAvailable then
+        begin
+            formatAvailable := False;
+            Deactivate(formatItem);
+        end;
+
+        If not UserAbort then
+            If tryFormat
+            then
+                DiskReady := CheckDisk
+            else
+                DiskReady := ScanDevices;
+    end;
+
+    CloseWindow(messagePort);
+    Activate(backupDialogCancelItem);
+
+    EZForceRefresh;
+
+    RequestNewDisk := DiskReady;
+end;
+
+Function RequestDisk;
+{ Returns true if disk inserted and ready, false if not. }
+const
+    cancelItem              =   10;
+    okItem                  =   11;
+    nullItem                =   3;
+
+    restoreDialogCancelItem =   1;
+var
+    VolumeText          :   pString;
+    DiskText            :   pString;
+    NewVolName          :   GSOSInString;
+    DiskReady           :   Boolean;
+    theError            :   integer;
+    ErrorString         :   pString;
+    ignoreOnlineStatus  :   Boolean;
+
+    itemHit             :   longint;
+    tmpRect             :   rect;
+    onlineDisk          :   Boolean;
+    ctlList             :   array [1..NullItem] of ptr;
+    NewControl2Junk     :   ctlRecHndl;
+    NumOfClicks         :   Integer;
+ 
+    procedure setDefaultMessage;
+    begin
+        theMessage := concat('Please insert the backup disk named "',
+                             DiskText,'".');
+    end;
+
+    Function CheckDisk : Boolean;
+    var
+        dInfoParms  :   dInfoOSDCB;
+        volumeParms :   volumeOSDCB;
+        volumeName  :   GSOSOutString;
+        VolumeText  :   pString;
+    begin
+        SavesetLocation.Device.maxSize := GSOSNameLength + 4;
+
+        with dInfoParms do
+        begin
+            pcount :=  2;
+            devNum := SavesetLocation.deviceNum;
+            devName := @SavesetLocation.Device;
+        end;
+
+        DInfoGS(dInfoParms);
+
+        VolumeName.maxSize := GSOSNameLength + 4;
+ 
+        with VolumeParms do
+        begin
+            pcount := 4;
+            devName := @SavesetLocation.Device.theString.theString;
+            volName := @VolumeName;
+        end;
+ 
+        VolumeGS(VolumeParms);
+ 
+        If ToolError = $00
+        then
+            begin
+                VolumeText := copy(VolumeName.theString.theString, 1,
+                                   VolumeName.theString.size);
+ 
+                If DiskText = VolumeText
+                then
+                    CheckDisk := True
+                else
+                    begin
+                        setDefaultMessage;
+                        CheckDisk := False;
+                        EZEjectDisk(SavesetLocation.DeviceNum);
+                    end;
+            end
+        else
+            If ToolError = $2f { Device not online (no disk in drive) }
+            then
+                CheckDisk := False
+            else
+                begin
+                    theError := ToolError;
+                    CheckDisk := False;
+                    EZEjectDisk(SavesetLocation.DeviceNum);
+                end;
+    end;
+
+    Function ScanDevices : Boolean;
+    var
+        volumeFound     :   Boolean;
+        diskFound       :   Boolean;
+        oneOnly         :   Boolean;
+        doneLoop        :   Boolean;
+        deviceNumber    :   Integer;
+        startDevice     :   Integer;
+    begin
+        volumeFound := False;
+        diskFound := False;
+
+        with SavesetLocation do
+        begin
+            deviceNumber := EZNextDevice(deviceNum, deviceDescr.deviceID);
+
+            If deviceNum > 0 then
+                startDevice := deviceNum
+            else
+                startDevice := deviceNumber;
+
+            doneLoop := False;
+
+            Repeat
+                volumeFound := EZCheckDevice(deviceNumber, newVolName);
+
+                If not volumeFound then
+                begin
+                    deviceNumber := EZNextDevice(deviceNumber, deviceDescr.deviceID);
+
+                    If deviceNumber = startDevice then
+                        doneLoop := True
+                end;
+            Until doneLoop or
+                  volumeFound;
+
+            If doneLoop then
+                volumeFound := EZCheckDevice(deviceNumber, newVolName);
+
+            If volumeFound
+            then
+                begin
+                    If (deviceNum <> deviceNumber) and
+                       (deviceNum <> 0) then
+                        EZEjectDisk(DeviceNum);
+
+                    deviceNum := deviceNumber;
+                end
+            else
+                begin
+                    deviceNumber := EZNextDevice(deviceNum, deviceDescr.deviceID);
+
+                    Repeat
+                        If ignoreOnlineStatus
+                        then
+                            diskFound := True
+                        else
+                            diskFound := EZIsOnline(deviceNumber);
+
+                        If not diskFound then
+                            deviceNumber := EZNextDevice(deviceNumber, deviceDescr.deviceID);
+                    Until (deviceNumber = startDevice) or
+                          diskFound;
+
+                    If not diskFound then
+                    begin
+                        If ignoreOnlineStatus
+                        then
+                            diskFound := True
+                        else
+                            diskFound := EZIsOnline(deviceNumber);
+                    end;
+
+                    If diskFound then
+                        deviceNum := deviceNumber;
+                end;
+        end;
+
+        If volumeFound or diskFound
+        then
+            ScanDevices := checkDisk
+        else
+            ScanDevices := False;
+    end;
+
+begin
+    If DiskNumber <> 0
+    then
+        begin
+            Int2Dec(DiskNumber, @DiskText[1], 3, False);
+            DiskText[0] := chr(3);
+            If DiskText[1] = ' ' then
+                DiskText[1] := '0';
+            If DiskText[2] = ' ' then
+                DiskText[2] := '0';
+            DiskText := concat(':Backup.', DiskText);
+        end
+    else
+        DiskText := ':Backup.FileList';
+
+    With NewVolName do
+    begin
+        theString := DiskText;
+        size := length(DiskText);
+    end;
+ 
+    setDefaultMessage;
+    showMessagePort(False);
+
+    with TmpRect do
+    begin
+        h1 := 450;
+        v1 := 14;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[1] := newButtonTemplate(cancelItem,
+                                    TmpRect,
+                                    0,
+                                    0,
+                                    0,
+                                    @'Cancel',
+                                    Nil,
+                                    Nil);
+ 
+    with TmpRect do
+    begin
+        h1 := 300;
+        v1 := 14;
+        h2 := 0;
+        v2 := 0;
+    end;
+ 
+    ctlList[2] := newButtonTemplate(okItem,
+                                    TmpRect,
+                                    1,
+                                    0,
+                                    0,
+                                    @'Ok',
+                                    Nil,
+                                    Nil);
+ 
+    ctlList[NullItem] := Nil;
+ 
+    NewControl2Junk := NewControl2(messagePort, 3, @ctlList[1]);
+
+    refreshMessage;
+ 
+    ignoreOnlineStatus := False;
+
+    With SavesetLocation do
+        If EZPollDevices(deviceNum, deviceDescr.deviceID) then
+            DiskReady := ScanDevices
+        else
+            DiskReady := False;
+
+    while (not DiskReady) and
+          (not UserAbort) do
+    begin
+        with SavesetLocation do
+            onlineDisk := EZPollDevices(deviceNum, deviceDescr.deviceID);;
+        ignoreOnlineStatus := False;
+        itemHit := 0;
+
+        If not onlineDisk then
+        begin
+            ShowWindow(messagePort);
+            SelectWindow(messagePort);
+            Activate(cancelItem);
+            Deactivate(restoreDialogCancelItem);
+
+            while (not onlineDisk) and
+                  (not UserAbort) do
+            begin
+                with SavesetLocation do
+                    onlineDisk := EZPollDevices(deviceNum, deviceDescr.deviceID);;
+
+                itemHit := EZDialogEvent(NumOfClicks);
+
+                case ord(itemHit) of
+                    cancelItem  :   UserAbort := True;
+                    okItem      :   begin
+                                        onlineDisk := True;
+                                        ignoreOnlineStatus := False;
+                                    end;
+                    otherwise   ;
+                end;
+            end;
+
+            HideWindow(messagePort);
+        end;
+
+        If not UserAbort then
+            DiskReady := ScanDevices;
+    end;
+
+    CloseWindow(messagePort);
+    Activate(restoreDialogCancelItem);
+
+    EZForceRefresh;
+
+    If DiskReady then
+        With SavesetLocation do
+            CurrentBlock := FirstBlock;
+
+    RequestDisk := DiskReady;
+end;
+
+Procedure CloseSaveset;
+const
+    DiskDev = 0;
+    FileDev = 1;
+ 
+    Procedure CloseSavesetFile;
+    var
+        CloseParams : closeOSDCB;
+    begin
+        With CloseParams do
+        begin
+            pcount := 1;
+            refNum := WriteFileParams.refNum;
+        end;
+ 
+        CloseGS(CloseParams);
+    end;
+
+begin
+    With SavesetLocation do
+    begin
+        Case DestType of
+            FileDev     : CloseSavesetFile;
+            DiskDev     : EZEjectDisk(DeviceNum);
+            otherwise   ;
+        end;
+    end;
+end;
+
+Function SetupFileServer;
+var
+    volumeName  :   GSOSOutString;
+    volumeParms :   volumeOSDCB;
+    prefixParms :   getPrefixOSDCB;
+    Msg         :   textBlock;
+    Junk        :   Integer;
+begin
+    with SavesetLocation do
+    begin
+        If EZIsOnline(deviceNum)
+        then
+            begin
+                DestType := 1;
+
+                volumeName.maxSize := GSOSNameLength + 4;
+
+                with volumeParms do
+                begin
+                    pcount := 2;
+                    devName := @Device.theString.theString;
+                    volName := @volumeName;
+                end;
+
+                VolumeGS(volumeParms);
+
+                with prefixParms do
+                begin
+                    pcount := 2;
+                    prefixNum := 8;
+                    prefix := @volumeName.theString.theString;
+                end;
+
+                SetPrefixGS(prefixParms);
+
+                SetupFileServer := True;
+            end
+        else
+            begin
+                Msg := concat('64:Although the system supports the ',
+                              'existence of a file server, there are ',
+                              'none currently online.:^#0');
+
+                Junk := AlertWindow(0,Nil,@Msg);
+
+                SetupFileServer := False;
+            end;
+    end;
+end;
+
+end.

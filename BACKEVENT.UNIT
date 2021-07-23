@@ -1,0 +1,45 @@
+{$ keep 'obj/BackEvent' }
+Unit BackEvent;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata, Backmenu;
+
+Procedure EventLoop;
+
+implementation
+
+Procedure EventLoop;
+var
+    Done        : Boolean;          { tells if the program should Stop  }
+    Event       : Integer;          { Event #; Returned by TaskMaster   }
+    LastEvent   : EventRecord;      { last Event Returned in Event loop }
+ 
+begin
+    Done := False;
+    Event := nullEvt;
+ 
+    repeat
+        LastEvent.TaskMask := $001f7fff;
+            { %0000 0000 0001 1111 0111 1111 1111 1111 }
+ 
+         Event := TaskMaster($076e, LastEvent);
+ 
+         case Event of
+             wInSpecial,
+             wInMenuBar  : HandleMenu(LastEvent, Done);
+             otherwise   : ;
+         end; {case}
+     until Done;
+end;
+
+end.

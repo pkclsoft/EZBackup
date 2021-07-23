@@ -1,0 +1,147 @@
+#include "13/EZLibDefs/EZTypes.Rez"
+
+type rPreferences {
+        integer;                        /* Overwrite old files only */
+        integer;                        /* Overwrite after prompting */
+        integer;                        /* Overwrite all files */
+        integer;                        /* Compress upon restoration */
+        integer;                        /* Verify backup disk after write */
+        integer;                        /* Clear backup bits at restore time */
+        integer;                        /* Delete partial backup files */
+        integer;                        /* Red on Green Thermometer */
+};
+
+#define rBackupProduct            $0001
+
+resource rProductTitle (rBackupProduct, noSpecialMemory,
+                                            locked,
+                                            fixed,
+                                            nonpurgeable,
+                                            preload) {
+        "EZ Backup",
+        " version 1.1"
+        TBEndOfLine
+        TBEndOfLine
+        "Designed and Written by Peter Easdown"
+        TBEndOfLine
+        "Tested by Joe Altoff & Byron Newton"
+        TBEndOfLine
+        TBEndOfLine
+        "Copyright "
+        EZCopyrightSymbal
+        " 1990 EZ-Soft & Power up"
+};
+
+resource rPreferences (1, noSpecialMemory,
+                          locked,
+                          fixed,
+                          nonpurgeable,
+                          preload) {
+
+        1,                              /* Overwrite old files only */
+        0,                              /* Overwrite after prompting */
+        0,                              /* Overwrite all files */
+        0,                              /* Compress upon restoration */
+        1,                              /* Verify backup disk after write */
+        1,                              /* Clear backup bits at restore time */
+        1,                              /* Delete partial backup files */
+        1                               /* Thermometer is red on green */
+};
+
+resource rTextForLETextBox2 (1, noSpecialMemory,
+                                locked,
+                                fixed,
+                                nonpurgeable,
+                                preload) {
+
+        TBStyleBold
+        "Backup preferences:"
+        TBStylePlain
+};
+
+resource rTextForLETextBox2 (2, noSpecialMemory,
+                                locked,
+                                fixed,
+                                nonpurgeable,
+                                preload) {
+
+        TBStyleBold
+        "Restore preferences:"
+        TBStylePlain
+};
+
+resource rTextForLETextBox2 (3, noSpecialMemory,
+                                locked,
+                                fixed,
+                                nonpurgeable,
+                                preload) {
+
+        TBStyleBold
+        "Miscellaneous preferences:"
+        TBStylePlain
+};
+
+type rAppSpecific {
+st:
+        integer = (end-st) / 8 - 4;
+        integer = (en-st) / 8 - 4;
+
+        string = TBStyleBold;
+        string = TBCenterJust;
+        string = TBFont;
+        string = TBHelvetica;
+        byte = 0x01;            /* 12 point */
+        byte = 0x0c;
+        string = "Approximate backup limit : ";
+en:
+        string;
+        string = " files";
+        string = TBStylePlain;
+end:
+};
+
+resource rAppSpecific(1, noSpecialMemory,
+                                locked,
+                                fixed,
+                                nonpurgeable,
+                                preload) {
+    "######"
+};
+
+resource rProductTitle(2, noSpecialMemory,
+                                locked,
+                                fixed,
+                                nonpurgeable,
+                                preload) {
+
+        "EZ Backup",
+        " version 1.1"
+        TBEndOfLine
+        TBEndOfLine
+        TBFillJust
+        "A GS/OS Backup Program for those with more than two partitions, and "
+        "want some flexibility in their backups. This program supports all"
+        "Apple supplied FST's, including HFS. This program is shareware.  "
+        "Please send me $20 if you use it."
+        TBEndOfLine
+        TBEndOfLine
+        TBCenterJust
+        "Designed and Written by Peter Easdown"
+        TBEndOfLine
+        TBEndOfLine
+        "Copyright "
+        EZCopyrightSymbal
+        " 1990 EZ-Soft & Power up"
+        TBEndOfLine
+        TBEndOfLine
+        TBLeftMargin
+        "\$82\$00"
+        TBFillJust
+        "EZ-Soft"
+        TBEndOfLine
+        "G.P.O Box 880"
+        TBEndOfLine
+        "Sydney, N.S.W, 2001"
+        TBEndOfLine
+        "Australia"
+};

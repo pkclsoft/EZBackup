@@ -1,0 +1,505 @@
+{$ keep 'obj/Backmisc' }
+Unit Backmisc;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata;
+
+Function adjust(theValue    :   longint) : longint;
+
+Procedure DeleteFileList;
+
+Procedure BuildPathName(    FileEntry : FileRecPtr;
+                        var FullName  : PathName);
+
+Procedure Unavailable;
+
+Procedure DisplayDetails;
+
+Procedure RefreshActivityWindow;
+
+Procedure ObtainWorkBuffer(maxSize  :   longint);
+
+Procedure ObtainListBuffer;
+
+Procedure RefreshParentMenu(ParentItem          :   longint;
+                            parentTemplate      :   popUpTemplatePtr;
+                            parentMenuTemplate  :   ptr;
+                            currentPort         :   grafPortPtr;
+                            currentPrefix       :   GSOSOutString);
+
+Procedure refreshMessage;
+
+Procedure showMessagePort(visible : Boolean);
+
+Procedure getPreferences;
+
+implementation
+
+Const
+{$ copy 'BackTConst.Inc' }
+
+Function adjust;
+var
+    tempValue   :   longint;
+begin
+    tempValue := (theValue div ord4(BlockByteCount)) * ord4(BlockByteCount);
+ 
+    If tempValue < theValue then
+        tempValue := TempValue + ord4(BlockByteCount);
+
+    adjust := tempValue;
+end;
+
+Procedure DeleteFileList;
+var
+    currentEntry        : FileRecPtr;
+    nextEntry           : FileRecPtr;
+    optionListHandle    : handle;
+begin
+    currentEntry := BackupHeader.FileList;
+    While currentEntry <> Nil do
+    begin
+        nextEntry := currentEntry^.NextFile;
+        If currentEntry^.DirEntry.optionList <> Nil then
+            with currentEntry^.DirEntry do
+            begin
+                optionListHandle := FindHandle(optionList);
+                If optionListHandle <> Nil then
+                    DisposeHandle(optionListHandle);
+            end;
+ 
+        currentEntry := nextEntry;
+    end;
+
+    If BackupHeader.FileList <> Nil then
+        DisposeHandle(ListBufferHandle);
+
+    BackupHeader.FileList := Nil;
+end;
+
+Procedure BuildPathName;
+var
+    CurEntry :  FileRecPtr;
+    DirName  :  pString;
+begin
+    FullName := copy(FileEntry^.FileName.theString.theString,         { Get file name    }
+                     1,
+                     FileEntry^.FileName.theString.size);
+
+    If FileEntry^.Selected <> markedOnly then
+    begin
+        CurEntry := FileEntry^.ParentDir;
+
+        While (CurEntry <> Nil) and
+              (CurEntry^.ParentDir^.Selected <> notSelected) do
+        begin
+            DirName := copy(CurEntry^.FileName.theString.theString,
+                            1,
+                            CurEntry^.FileName.theString.size);
+            Insert(Separator, FullName, 1);
+            Insert(DirName, FullName, 1);
+            CurEntry := CurEntry^.ParentDir;
+        end;
+    end;
+
+    DirName := copy(BackupHeader.RootDirName.theString,
+                    1,
+                    BackupHeader.RootDirName.size);
+
+    Insert(Separator, FullName, 1);                 { Insert root name }
+    Insert(DirName, FullName, 1);
+end;
+
+Procedure Unavailable;
+var
+    Msg  : textBlock;
+    Junk : Integer;
+begin
+    Msg := concat('32:That option is not available in this ',
+                  'version of EZ Backup.:^#0');
+ 
+    Junk := AlertWindow($0001,Nil,@Msg);
+end;
+
+Procedure DisplayDetails;
+var
+    fileNumber      :   integer;
+    TempText        :   pString;
+    RedRect         :   rect;
+    RedPercent      :   Real;
+    GreenRect       :   rect;
+    GreenPercent    :   Real;
+    tmpRect         :   Rect;
+    TmpText         :   textBlock;
+    TmpString       :   pString;
+begin
+    With BackupHeader, SavesetLocation do
+    begin
+        If SavesetLocation.DestType = 0 then
+        begin
+            MoveTo(120,15);
+            TmpString := cnvis(NumOfDisks);
+            DrawString(@TmpString);
+ 
+            MoveTo(180,15);
+            Long2Dec(TotalDisks, @TmpText, 2, False);
+            DrawText(@TmpText,2);
+        end;
+ 
+        MoveTo(320,15);
+        Long2Dec(BackupLength div 1024, @TmpText, 6, False);
+        DrawText(@TmpText,6);
+        DrawString(@'K');
+    end;
+
+    MoveTo(10,30);
+
+    with backupHeader do
+    begin
+        If Reading
+        then
+            begin
+                DrawString(@'Reading file ');
+                fileNumber := numOfFiles - numLeft;
+            end
+        else
+            begin
+                DrawString(@'Writing file ');
+                fileNumber := numOfFiles - filesLeftToDo;
+            end;
+    end;
+
+    MoveTo(120,30);
+    TempText := cnvis(fileNumber);
+    DrawString(@TempText);
+    DrawString(@' of ');
+    TempText := cnvis(BackupHeader.NumOfFiles);
+    DrawString(@TempText);
+    DrawString(@'        ');
+
+    With TmpRect do
+    begin
+        h1 := 120;
+        v1 := 35;
+        h2 := 390;
+        v2 := 47;
+    end;
+
+    SetSolidPenPat(3);
+    PaintRect(TmpRect);
+
+    MoveTo(120,45);
+
+    If displayEntry <> Nil
+    then
+        With displayEntry^ do
+            DrawText(@FileName.theString.theString, FileName.theString.size)
+    else
+        DrawString(@'"All buffered files"');
+ 
+    With BackupHeader do
+    begin
+        RedPercent := ((NumOfFiles - filesLeftToDo) / NumOfFiles) * 198.0;
+        GreenPercent := ((NumOfFiles - NumLeft) / NumOfFiles) * 198.0;
+    end;
+
+    With RedRect do
+    begin
+        h1 := 11;
+        h2 := h1 + trunc(RedPercent);
+        v1 := 51;
+        v2 := 60;
+    end;
+
+    With GreenRect do
+    begin
+        h1 := RedRect.h2;
+        h2 := RedRect.h1 + trunc(GreenPercent);
+        v1 := 51;
+        v2 := 60;
+    end;
+
+    SetSolidPenPat(2);
+    PaintRect(GreenRect);
+
+    If RedPercent > 0 then
+    begin
+        SetPenPat(redPattern^);
+        PaintRect(RedRect);
+    end;
+end;
+
+Procedure RefreshActivityWindow;
+var
+    TmpRect     :   Rect;
+    penSize     :   point;
+begin
+    SetPort(currentPort);
+
+    SetForeColor(0);
+    SetBackColor(3);
+ 
+    If SavesetLocation.DestType = 0 then
+    begin
+        MoveTo(10,15);
+        DrawString(@'Disk number');
+        MoveTo(150,15);
+        DrawString(@'of');
+        MoveTo(110,15);
+        DrawString(@':');
+    end;
+ 
+    MoveTo(210,15);
+    DrawString(@'Backup Length');
+ 
+    MoveTo(10,45);
+    DrawString(@'Current file');
+ 
+    MoveTo(310,15);  DrawString(@':');
+    MoveTo(110,30);  DrawString(@':');
+    MoveTo(110,45); DrawString(@':');
+ 
+    SetSolidPenPat(0);
+
+    With TmpRect do
+    begin
+        h1 := 8;
+        h2 := 212;
+        v1 := 50;
+        v2 := 61;
+    end;
+
+    GetPenSize(penSize);
+    SetPenSize(3,1);
+    FrameRect(TmpRect);
+    SetPenSize(penSize.h,penSize.v);
+ 
+    DisplayDetails;
+
+    DrawControls(currentPort);
+end;
+
+Procedure ObtainWorkBuffer;
+var
+    divisor     :   longint;
+    tempHandle  :   handle;
+    Msg         :   textBlock;
+    Junk        :   Integer;
+begin
+    CompactMem;
+
+    tempHandle := NewHandle(ord4(32768), userID,
+                            attrLocked  + attrFixed +
+                            attrNoPurge, Nil);
+
+    WorkBufferHandle := NewHandle(maxSize, userID,
+                                  attrLocked  + attrFixed +
+                                  attrPage    + attrNoPurge, Nil);
+
+    While (ToolError <> 0) and
+          (maxSize >= ord4(32768)) do
+    begin
+        maxSize := maxSize - ord4(32768);
+
+        WorkBufferHandle := NewHandle(maxSize, userID,
+                                      attrLocked  + attrFixed +
+                                      attrPage    + attrNoPurge, Nil);
+    end;
+
+    WorkBufferSize := (maxSize div ord4(BlockByteCount)) *
+                       ord4(BlockByteCount);
+
+    If (ToolError = 0) and
+       (WorkBufferSize >= ord4(32768))
+    then
+        begin
+            DisposeHandle(WorkBufferHandle);
+            WorkBufferHandle := NewHandle(WorkBufferSize, userID,
+                                          attrLocked  + attrFixed +
+                                          attrPage    + attrNoPurge, Nil);
+
+            WorkArea := Pointer(WorkBufferHandle^);
+        end
+    else
+        begin
+            If ToolError = 0 then
+                DisposeHandle(WorkBufferHandle);
+
+            Msg := concat('42:There is not enough memory available to carry ',
+                          'out the operation.:^#0');
+
+            Junk := AlertWindow(0,Nil,@Msg);
+
+            UserAbort := True;
+        end;
+
+    DisposeHandle(tempHandle);
+end;
+
+Procedure ObtainListBuffer;
+var
+    divisor     :   longint;
+    tempHandle  :   handle;
+    Msg         :   textBlock;
+    Junk        :   Integer;
+    maxSize     :   longint;
+begin
+    CompactMem;
+
+    tempHandle := NewHandle(ord4(32768), userID,
+                            attrLocked  + attrFixed +
+                            attrNoPurge, Nil);
+
+    maxSize := maxBlock;
+
+    ListBufferHandle := NewHandle(maxSize, userID,
+                                  attrLocked  + attrFixed +
+                                  attrPage    + attrNoPurge, Nil);
+
+    While (ToolError <> 0) and
+          (maxSize >= ord4(32768)) do
+    begin
+        maxSize := maxSize - ord4(32768);
+
+        ListBufferHandle := NewHandle(maxSize, userID,
+                                      attrLocked  + attrFixed +
+                                      attrPage    + attrNoPurge, Nil);
+    end;
+
+    ListBufferSize := (maxSize div ord4(BlockByteCount)) *
+                       ord4(BlockByteCount);
+
+    If (ToolError = 0) and
+       (ListBufferSize >= ord4(32768))
+    then
+        begin
+            DisposeHandle(ListBufferHandle);
+            ListBufferHandle := NewHandle(ListBufferSize, userID,
+                                          attrLocked  + attrFixed +
+                                          attrPage    + attrNoPurge, Nil);
+
+            ListArea := Pointer(ListBufferHandle^);
+        end
+    else
+        begin
+            If ToolError = 0 then
+                DisposeHandle(ListBufferHandle);
+
+            Msg := concat('42:There is not enough memory available to carry ',
+                          'out the operation.:^#0');
+
+            Junk := AlertWindow(0,Nil,@Msg);
+
+            UserAbort := True;
+        end;
+
+    DisposeHandle(tempHandle);
+end;
+
+Procedure RefreshParentMenu;
+var
+    menuCtl         : ctlRecHndl;
+    popupDefault    : integer;
+    NewControl2Junk : ctlRecHndl;
+begin
+    menuCtl := GetCtlHandleFromID(Nil, ParentItem);
+ 
+    disposeControl(menuCtl);
+ 
+    popupDefault := EZUpdateDirectoryMenu(currentPrefix.theString,
+                                          parentMenuTemplate);
+ 
+    parentTemplate^.initialValue := popupDefault;
+ 
+    NewControl2Junk := NewControl2(currentPort, 0, parentTemplate);
+ 
+    InvalRect(parentTemplate^.boundsRect);
+end;
+
+Procedure refreshMessage;
+var
+    theRect         :   rect;
+begin
+    with theRect do
+    begin
+        h1 := 10;
+        h2 := 530;
+        v1 := 2;
+        v2 := 28;
+    end;
+
+    LETextBox2(@theMessage, length(theMessage), theRect, leJustFill);
+
+    DrawControls(messagePort);
+end;
+
+Procedure showMessagePort;
+var
+    windowRecord    :   paramList;
+    theRect         :   rect;
+begin
+    with theRect do
+    begin
+        h1 := 50;
+        h2 := 590;
+        v1 := 25;
+        v2 := 57;
+    end;
+
+    with windowRecord do
+    begin
+        paramLength := 78;
+        If visible
+        then
+            wFrameBits := $2062   { % 0010 0000 0110 0010 }
+        else
+            wFrameBits := $2042;   { % 0010 0000 0100 0010 }
+        wTitle := Nil;
+        wRefCon := 0;
+        wZoom.h1 := 0;
+        wZoom.h2 := 0;
+        wZoom.v1 := 0;
+        wZoom.v2 := 0;
+        wColor := nil;
+        wYOrigin := 0;
+        wXOrigin := 0;
+        wDataH := theRect.v2 - theRect.v1;
+        wDataW := theRect.h2 - theRect.h1;
+        wMaxH := theRect.v2 - theRect.v1;
+        wMaxW := theRect.h2 - theRect.h1;
+        wScrollVer := 0;
+        wScrollHor := 0;
+        wPageVer := 0;
+        wPageHor := 0;
+        wInfoRefCon := 0;
+        wInfoHeight := 0;
+        wFrameDefProc := nil;
+        wInfoDefProc := nil;
+        wContDefProc := pointer(@refreshMessage);
+        wPosition := theRect;
+        wPlane := pointer(topMost);
+        wStorage := nil;
+    end;
+
+    messagePort := NewWindow(windowRecord);
+
+    SetPort(messagePort);
+end;
+
+Procedure getPreferences;
+begin
+    prefHandle := preferencesHandle(LoadResource(rPreferences,1));
+    pref := prefHandle^^;
+end;
+
+end.

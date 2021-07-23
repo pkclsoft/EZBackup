@@ -1,0 +1,431 @@
+{$ keep 'obj/Backwrite' }
+Unit Backwrite;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata, Backmisc, Backlow, Backbufr, Backlist;
+
+Function OpenDest : Boolean;     { Returns true if the user has elected to }
+
+Procedure WriteFileData;
+
+Procedure WriteHeader;
+
+Procedure BackupFile(FileEntry : FileRecPtr);
+
+implementation
+
+Function OpenDest;               { Returns true if the user has elected to }
+const                            { cancel the backup when asked to insert  }
+    DiskDev = 0;                 { a disk to write to, or when an error    }
+    FileDev = 1;                 { occurs at file creation.                }
+var
+    ReqStat : Integer;
+ 
+    Function OpenOutputFile : Boolean; { Returns true if an error occured when   }
+    var                                { creating the file.                      }
+        CreateParams    : createOSDCB;
+        OpenParams      : openOSDCB;
+        FileName        : GSOSInString;
+        ErrCode         : Integer;
+        InfoParams      : setFileInfoOSDCB;
+        DestroyParams   : destroyOSDCB;
+        setMarkParams   : setMarkOSDCB;
+        Msg             : textBlock;
+    begin
+        FileName.theString := copy(SavesetLocation.fullpathname, 1,
+                               length(SavesetLocation.fullPathName));
+        FileName.size := length(SavesetLocation.fullPathName);
+ 
+        with CreateParams do
+        begin
+            pcount := 6;
+            pathName := @FileName;
+            access := readEnableMask + writeEnableMask;
+            fileType := $00e0;
+            auxType := ord4($00008006);
+            storageType := standardFileStorage;
+            dataEOF := BackupHeader.BackupLength;
+        end;
+ 
+        CreateGS(CreateParams);
+ 
+        If ToolError = $47 then { file already exists, so delete it first }
+        begin
+            With InfoParams do         { ensure that we can delete it }
+            begin                      { by changing the access.      }
+                pcount := 2;
+                pathName := @FileName;
+                access := readEnableMask +
+                          writeEnableMask +
+                          destroyEnableMask +
+                          renameEnableMask;
+            end;
+ 
+            SetFileInfoGS(InfoParams);
+ 
+            With DestroyParams do      { now delete it.               }
+            begin
+                pcount := 1;
+                pathName := @FileName;
+            end;
+ 
+            DestroyGS(DestroyParams);
+ 
+            CreateGS(CreateParams);  { now create the new file.     }
+        end;
+ 
+        If ToolError = 0 then
+        begin
+            With OpenParams do
+            begin
+                pcount := 3;
+                pathName := @FileName;
+                requestAccess := writeEnableMask;  { Read/Write access }
+            end;
+ 
+            OpenGS(OpenParams);
+ 
+            { ensure that the global write parameters have the correct reference
+              number before finishing off.  that way when writes are done to the
+              file, they will go to the correct file. }
+            WriteFileParams.refNum := OpenParams.refNum;
+
+            If ToolError = 0 then
+            begin
+                with setMarkParams do
+                begin
+                    pcount := 3;
+                    refNum := OpenParams.refNum;
+                    base := 0;
+                    displacement := BackupHeader.DirectoryLength;
+                end;
+
+                SetEOFGS(setMarkParams);
+                SetMarkGS(setMarkParams);
+            end;
+        end;
+ 
+        If ToolError <> 0
+        then
+            begin
+                Msg := concat('An error has occured while trying to open ',
+                              'the saveset file.  Aborting the backup.');
+
+                OpenOutputFile := ProdosError(ToolError, Msg, True);
+            end
+        else
+            OpenOutputFile := False;
+    end;
+
+    Function OpenOutputDisk : Boolean;
+    begin
+        theMessage := 'Please insert the first backup disk ...';
+        showMessagePort(True);
+
+        OpenOutputDisk := False;
+    end;
+
+begin
+    With SavesetLocation do
+    begin
+        Case DestType of
+            FileDev     :   OpenDest := OpenOutputFile;
+            Diskdev     :   OpenDest := OpenOutputDisk;
+            otherwise   :   OpenDest := False;
+        end;
+    end;
+ 
+    ByteIndex := 0;
+end;
+
+Procedure WriteFileData;
+begin
+    Reading := False;
+
+    If (SavesetLocation.DestType = 0) and
+       (NumOfDisks = 0) then
+    begin
+        CloseWindow(messagePort);
+        NumOfDisks := NumOfDisks + 1;
+        UserAbort := not RequestNewDisk(NumOfDisks);
+    end;
+
+    FlushBuffer;
+
+    filesLeftToDo := BackupHeader.numLeft;
+
+    DisplayDetails;
+end;
+
+Procedure WriteHeader;
+const
+    RecordEntryLength   =   FileRecordLength;
+    HeaderLength        =   1024;
+var
+    CurEntry            :   FileRecPtr;
+    tmpEntry            :   FileRecPtr;
+    fileCount           :   integer;
+
+    Function AnyMoreSelected : Boolean;
+    var
+        loopEntry       :   FileRecPtr;
+        oneFound        :   Boolean;
+    begin
+        loopEntry := curEntry^.NextFile;
+        oneFound := False;
+
+        while loopEntry <> Nil do
+        begin
+            if loopEntry^.Selected <> notSelected then
+                oneFound := True;
+
+            loopEntry := loopEntry^.NextFile;
+        end;
+
+        AnyMoreSelected := oneFound;
+    end;
+begin
+    With SavesetLocation do
+        If DestType = 0
+        then
+            begin
+                EZEjectDisk(deviceNum);
+                UserAbort := not RequestNewDisk(0);
+            end
+        else
+            SetSavesetPosition(0);
+
+    If not UserAbort then
+    begin
+        ByteIndex := 0;
+
+        WriteBackup(@BackupHeader, ord4(HeaderLength));  { Copy the header to the buffer }
+        FlushBuffer;                               { Flush the buffer to the       }
+                                                   { destination.                  }
+
+        CurEntry := BackupHeader.FileList;
+        fileCount := BackupHeader.NumOfFiles;
+ 
+        While fileCount > 0 do
+        begin
+            If CurEntry^.Selected <> notSelected then
+            begin
+                if fileCount = 1 then
+                begin
+                    tmpEntry := curEntry^.NextFile;
+                    curEntry^.NextFile := Nil;
+                end;
+
+                WriteBackup(Pointer(curEntry), ord4(RecordEntryLength));
+
+                if fileCount = 1 then
+                    curEntry^.NextFile := tmpEntry;
+
+                fileCount := fileCount - 1;
+            end;
+
+            CurEntry := CurEntry^.NextFile;
+        end;
+ 
+        FlushBuffer;           { Ensure all of the file records have actually }
+                               { reached the destination.                     }
+        dispose(tmpEntry);
+    end;
+end;
+
+Procedure BackupFile;
+{ This procedure will copy the file specified by the file record pointed to   }
+{ by FileEntry to the backup destination.  It does this by reading as much as }
+{ possible of the file (up to 62K) at a time into the WorkArea, and calls     }
+{ FlushBuffer to clean up the buffer, and then call WriteDestination to       }
+{ actually put it in the saveset.  WriteDestination takes care of disk        }
+{ swapping, etc, which means we don't need to here.  If the flag UserAbort is }
+{ true upon return from WriteDestination, then either the user has aborted    }
+{ the backup at a disk swap time, or the system has run out of room for the   }
+{ saveset file, so we close the file and return.                              }
+var
+    OpenParams  :   openOSDCB;
+    ReadParams  :   readWriteOSDCB;
+    CloseParams :   closeOSDCB;
+    ByteCount   :   LongInt;
+    FullName    :   PathName;
+    PathString  :   GSOSInString;
+    clearBkParm :   clrBkupBitOSDCB;
+    Msg         :   packed array [1..200] of char;
+    AlertButton :   integer;
+    fileDone    :   Boolean;
+ 
+    Procedure UpBufferToNextBlock;
+    var
+        xferCount   :   Longint;
+    begin
+        xferCount := (ByteIndex div ord4(BlockByteCount)) *
+                     ord4(BlockByteCount);
+ 
+        If xferCount < ByteIndex then
+            xferCount := xferCount + ord4(BlockByteCount);
+
+        ByteIndex := xferCount;
+
+        If ByteIndex = WorkBufferSize then
+            FlushBuffer;
+    end;
+
+    Procedure TransferData;
+    var
+        xferCount   :   Longint;
+    begin
+        While (ByteCount > 0) and (not UserAbort) do
+        begin
+            If (ByteIndex + ByteCount) > WorkBufferSize
+            then
+                xferCount := WorkBufferSize - ByteIndex
+            else
+                xferCount := ByteCount;
+
+            With ReadParams do
+            begin
+                pcount := 4;
+                refNum := OpenParams.refNum;
+                dataBuffer := Pointer(ord4(WorkArea) + ByteIndex);
+                requestCount := xferCount;
+            end;
+ 
+            ReadGS(ReadParams);
+ 
+            ByteCount := ByteCount - xferCount;
+            ByteIndex := ByteIndex + xferCount;
+
+            If ByteIndex = WorkBufferSize then
+                WriteFileData;
+        end;
+
+        UpBufferToNextBlock;
+    end;
+
+    Procedure closeFork;
+    begin
+        With CloseParams do
+        begin
+            pcount := 1;
+            refNum := OpenParams.refNum;
+        end;
+ 
+        CloseGS(CloseParams);
+    end;
+
+    Procedure doDataFork;
+    begin
+        ByteCount := FileEntry^.DirEntry.eofValue;
+ 
+        TransferData;
+ 
+        closeFork;
+    end;
+
+    Procedure doResourceFork;
+    begin
+        With OpenParams do
+        begin
+            pcount := 4;
+            pathName := @PathString;
+            requestAccess := readEnableMask;
+            resourceNumber := 1;
+        end;
+ 
+        OpenGS(OpenParams);
+ 
+        ByteCount := FileEntry^.DirEntry.resourceEof;
+ 
+        TransferData;
+ 
+        CloseFork;
+    end;
+
+begin
+    Reading := True;
+    displayEntry := FileEntry;
+
+    With FileEntry^ do
+    begin
+        If DirEntry.fileType <> DirectoryFile then
+        { We dont copy the contents of the actual directory file into the      }
+        { backup, after all, the information is already in the header.         }
+        begin
+            BuildPathName(FileEntry, FullName); { Constructs the full pathname }
+                                                { of a file from the list.     }
+ 
+            PathString.theString := FullName;
+            PathString.size := length(FullName);
+ 
+            With OpenParams do
+            begin
+                pcount := 2;
+                pathName := @PathString;
+            end;
+ 
+            fileDone := False;
+
+            repeat
+                OpenGS(OpenParams);
+ 
+                If ToolError = 0
+                then
+                    begin
+                        doDataFork;
+
+                        If (DirEntry.flags & ffExtendedFileMask) <> 0 then
+                            doResourceFork;
+ 
+                        If (DirEntry.optionList <> Nil) and
+                           (OptionListOffset <> 0) then
+                        begin
+                            WriteBackup(DirEntry.optionList, ord4(OptionListLength));
+                            UpBufferToNextBlock;
+                        end;
+
+                        fileDone := True;
+                    end
+                else
+                    begin
+                        Msg := concat('44',chr(1),'The file "',
+                                      copy(FileName.theString.theString,1,FileName.theString.size),
+                                      '" was included in the saveset, but cannot ',
+                                      'be opened for backing up.',
+                                      chr(1),'#6',chr(1),'#1',chr(1),'^#4');
+
+                        AlertButton := AlertWindow(0,Nil,@Msg);
+
+                        case AlertButton of
+                            0           :   begin
+                                                EZForceRefresh;
+
+                                                Selected := notSelected;
+                                                If SavesetLocation.DestType = 0 { disk }
+                                                then
+                                                    ComputeHeaderDetails(0)
+                                                else
+                                                    ComputeHeaderDetails(3);
+                                                fileDone := True;
+                                            end;
+                            1           :   UserAbort := True;
+                            otherwise   ;
+                        end;
+                    end;
+            Until fileDone or
+                  UserAbort;
+        end;
+    end;
+end;
+
+end.

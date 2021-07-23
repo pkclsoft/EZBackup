@@ -1,0 +1,155 @@
+ MACRO
+&lab add4 &a1,&a2,&a3
+&lab ANOP
+ LCLC &C1
+ LCLC &C2
+ LCLC &REST1
+ LCLC &REST2
+&C2 AMID &a2,1,1
+&REST2 AMID &a2,2,L:&a2-1
+ AIF C:&a1=0,.a
+&C1 AMID &a1,1,1
+&REST1 AMID &a1,2,L:&a1-1
+ lda &a1
+.a
+ clc
+ adc &a2
+ sta &a3
+ AIF C:&a1>0,.b
+ lda #0
+ AGO .d
+.b
+ AIF "&C1"="#",.c
+ lda &a1+2
+ AGO .d
+.c
+ lda #^&REST1
+.d
+ AIF "&C2"="#",.e
+ adc &a2+2
+ AGO .f
+.e
+ adc #^&REST2
+.f
+ sta &a3+2
+ MEND
+ MACRO
+&lab inc4 &a1
+&lab ANOP
+ inc &a1
+ bne ~a&SYSCNT
+ inc &a1+2
+~a&SYSCNT ANOP
+ MEND
+ MACRO
+&lab dec4 &a1
+&lab ANOP
+ dec &a1
+ bpl ~a&SYSCNT
+ dec &a1+2
+~a&SYSCNT ANOP
+ MEND
+ MACRO
+&lab longm
+&lab ANOP
+ rep #%00100000
+ longa on
+ MEND
+ MACRO
+&lab shortm
+&lab ANOP
+ sep #%00100000
+ longa off
+ MEND
+ MACRO
+&lab subroutine &parms,&work
+&lab anop
+ aif c:&work,.a
+ lclc &work
+&work setc 0
+.a
+ gbla &totallen
+ gbla &worklen
+&worklen seta &work
+&totallen seta 0
+ aif c:&parms=0,.e
+ lclc &len
+ lclc &p
+ lcla &i
+&i seta c:&parms
+.b
+&p setc &parms(&i)
+&len amid &p,2,1
+ aif "&len"=":",.c
+&len amid &p,1,2
+&p amid &p,4,l:&p-3
+ ago .d
+.c
+&len amid &p,1,1
+&p amid &p,3,l:&p-2
+.d
+&p equ &totallen+3+&work
+&totallen seta &totallen+&len
+&i seta &i-1
+ aif &i,^b
+.e
+ tsc
+ sec
+ sbc #&work
+ tcs
+ inc a
+ phd
+ tcd
+ mend
+ MACRO
+&lab return &r
+&lab anop
+ lclc &len
+ aif c:&r,.a
+ lclc &r
+&r setc 0
+&len setc 0
+ ago .h
+.a
+&len amid &r,2,1
+ aif "&len"=":",.b
+&len amid &r,1,2
+&r amid &r,4,l:&r-3
+ ago .c
+.b
+&len amid &r,1,1
+&r amid &r,3,l:&r-2
+.c
+ aif &len<>2,.d
+ ldy &r
+ ago .h
+.d
+ aif &len<>4,.e
+ ldx &r+2
+ ldy &r
+ ago .h
+.e
+ aif &len<>10,.g
+ ldy #&r
+ ldx #^&r
+ ago .h
+.g
+ mnote 'Not a valid return length',16
+ mexit
+.h
+ aif &totallen=0,.i
+ lda &worklen+1
+ sta &worklen+&totallen+1
+ lda &worklen
+ sta &worklen+&totallen
+.i
+ pld
+ tsc
+ clc
+ adc #&worklen+&totallen
+ tcs
+ aif &len=0,.j
+ tya
+.j
+ rtl
+ mend

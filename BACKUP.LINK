@@ -1,0 +1,59 @@
+-o obj/ezbackup
+-t $b3
+
+obj/backup.root
+obj/backup.a
+obj/backasm.a
+
+obj/backdata.a
+obj/backcopy.root
+obj/backcopy.a
+
+-lseg miscel.01
+
+obj/backmisc.a
+
+-lseg lowlevel
+
+obj/backlow.a
+obj/backbufr.a
+obj/backsave.a
+
+-lseg miscel.02
+
+obj/backlist.a
+obj/backwrite.a
+obj/backread.a
+
+-lseg miscel.03
+
+obj/backedit.a
+obj/backpref.a
+
+-lseg catalog
+
+obj/backcat.a
+
+-lseg disk
+
+obj/backdisk.a
+obj/backbad.a
+
+-lseg backup
+
+obj/backback.a
+
+-lseg restore
+
+obj/backrest.a
+
+-lseg system
+
+obj/backinit.a
+obj/backmenu.a
+obj/backevent.a
+
+-lib 2/ezlib
+-lib 2/backuplib
+-lib 2/paslib
+-lib 2/syslib

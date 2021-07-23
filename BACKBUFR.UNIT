@@ -1,0 +1,494 @@
+{$ keep 'obj/Backbufr' }
+Unit Backbufr;
+
+interface
+
+Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,
+     SFToolSet, ListMgr, IntegerMath, LineEdit, ToolLocator, MenuMgr,
+     DeskMgr, MemoryMgr, ResourceMgr;
+
+{$ libprefix '13/ezlibdefs/' }
+USES EZConst, EZMisc, EZControls, EZWindows, EZLineEdit, EZDisk, EZDates,
+     EZAlerts, EZString, EZTools, EZMenu, EZList, EZCrypt, EZDebug;
+
+{$ LibPrefix 'intf/' }
+Uses Backdata, Backmisc, Backasm, Backlow;
+
+Procedure WriteBackup(BufferAddress    :   Ptr;
+                      BufferLength     :   LongInt);
+
+Procedure FlushBuffer;
+
+Procedure ReadBackup(NumOfBlocks : Longint);
+
+Procedure SetSavesetPosition(BlockNumber : longint);
+
+implementation
+
+Procedure WriteDestination;
+{ Will write the current contents of the Work Area to the destination, be it  }
+{ a file or a disk.  If during the write, the destination runs out of room,   }
+{ the user will either be informed that the backup was aborted (if the        }
+{ destination is a file), or will be prompted for the next disk (if the       }
+{ destination is a disk).                                                     }
+var
+    fileChunk           :   Integer;
+    filesInBuffer       :   Integer;
+    origFilesToDo       :   Integer;
+    percent             :   real;
+
+    Function cancelButtonHit : Boolean;
+    const
+        cancelItem      =   1;
+    var
+        itemHit         :   longint;
+        NumOfClicks     :   Integer;
+    begin
+        itemHit := EZDialogEvent(NumOfClicks);
+
+        if itemHit = cancelItem
+        then
+            cancelButtonHit := True
+        else
+            cancelButtonHit := False;
+    end;
+
+    Procedure WriteToDisk;
+    { This procedure will write the current contents of the WorkArea to the    }
+    { current disk.  If it runs out of room, then the user is prompted for the }
+    { next disk, and the remaining data is written out to the new disk.        }
+    const
+        MaxWriteSize    =   262144; { 256K block }
+    var
+        DWriteParams    :   devReadWriteOSDCB;
+        xferCount       :   longint;
+        byteCount       :   longint;
+        spaceLeft       :   longint;
+        offset          :   longint;
+    begin
+        With SavesetLocation, BackupHeader do
+        begin
+            byteCount := ByteIndex;
+            offset := 0;
+            xferCount := 0;
+
+            while (byteCount > 0) and
+                  (not UserAbort) do
+            begin
+                with DeviceDescr do
+                    spaceLeft := ord4((ord4(totalBlocks) - ord4(currentBlock)) *
+                                      ord4(BlockByteCount));
+
+                If byteCount > ord4(MaxWriteSize)
+                then
+                    xferCount := ord4(MaxWriteSize)
+                else
+                    xferCount := byteCount;
+
+                If spaceLeft < xferCount then
+                    xferCount := spaceLeft;
+
+                With DWriteParams do
+                begin
+                    pcount := 6;
+                    devNum := DeviceNum;
+                    buffer := Pointer(ord4(WorkArea) + ord4(offset));
+                    requestCount := xferCount;
+                    startingBlock := ord4(CurrentBlock);
+                    blockSize := BlockByteCount;
+                end;
+ 
+                DWriteGS(DWriteParams);
+ 
+                If (spaceLeft = xferCount) and
+                   (NumOfDisks < BackupHeader.TotalDisks)
+                then
+                    begin
+                        NumOfDisks := NumOfDisks + 1;
+                        EZEjectDisk(deviceNum);
+                        UserAbort := not RequestNewDisk(NumOfDisks);
+                    end
+                else
+                    CurrentBlock := CurrentBlock + ord(xferCount div
+                                                       ord4(BlockByteCount));
+
+                byteCount := byteCount - xferCount;
+                offset := offset + xferCount;
+                xferCount := 0;
+
+                percent := (offset / byteIndex) * filesInBuffer;
+                fileChunk := trunc(percent);
+                filesLeftToDo := origFilesToDo - fileChunk;
+                DisplayDetails;
+
+                If not UserAbort then
+                    UserAbort := cancelButtonHit;
+            end;
+        end;
+    end;
+ 
+    Procedure WriteToFile;
+    { This procedure will write the current contents of the WorkArea to the    }
+    { destination file. If it runs out of room on the volume that the file     }
+    { resides, then the user is advised of this, and the backup is aborted.    }
+    const
+        MaxWriteSize    =   65536;
+    var
+        Msg             :   textBlock;
+        xferCount       :   longint;
+        byteCount       :   longint;
+        offset          :   longint;
+    begin
+        byteCount := ord4(ByteIndex);
+        offset := ord4(0);
+        xferCount := ord4(0);
+
+        while not userAbort and
+              (byteCount > ord4(0)) do
+        begin
+            If byteCount > ord4(MaxWriteSize)
+            then
+                xferCount := xferCount + ord4(MaxWriteSize)
+            else
+                xferCount := ord4(byteCount);
+
+            With WriteFileParams do
+            begin
+                pcount := 5;
+                dataBuffer := Pointer(ord4(ord4(WorkArea) + ord4(offset)));
+                requestCount := ord4(xferCount);
+                cachePriority := 0;
+            end;
+
+            WriteGS(WriteFileParams);
+
+            byteCount := ord4(byteCount) - ord4(xferCount);
+            offset := ord4(offset) + ord4(xferCount);
+            xferCount := ord4(0);
+
+            percent := (ord4(offset) / ord4(byteIndex)) * filesInBuffer;
+            fileChunk := trunc(percent);
+            filesLeftToDo := origFilesToDo - fileChunk;
+
+            DisplayDetails;
+
+            UserAbort := cancelButtonHit;
+
+            If ToolError <> 0 then
+            begin
+                Msg := 'Error when writing to Saveset file.';
+ 
+                UserAbort := ProdosError(ToolError, Msg, True);
+            end;
+        end;
+    end;
+
+begin
+    with backupHeader do
+    begin
+        filesInBuffer := filesLeftToDo - NumLeft;
+        origFilesToDo := filesLeftToDo;
+    end;
+
+    displayEntry := Nil;
+
+    DisplayDetails;
+
+    With SavesetLocation do
+    begin
+        Case DestType of
+            0           :   WriteToDisk;
+            1           :   WriteToFile;
+            otherwise   ;
+        end;
+    end;
+ 
+    ByteIndex := 0;
+end;
+
+Procedure WriteBackup;
+{ Will copy the specified number of bytes from BufferAddress to the WorkArea, }
+{ and will write the buffer out to the destination if it is filled up during  }
+{ copy process.                                                               }
+var
+    Count : LongInt;
+begin
+    Count := CopyToBuffer(BufferAddress, BufferLength);
+ 
+    ByteIndex := ByteIndex + BufferLength;
+ 
+    If ByteIndex = WorkBufferSize then
+        WriteDestination;
+ 
+    While (Count > 0) do
+    begin
+        ByteIndex := WorkBufferSize;
+ 
+        WriteDestination;
+ 
+        BufferAddress := Pointer(ord4(BufferAddress) +
+                                 ord4(ord4(BufferLength) - ord4(Count)));
+ 
+        Count := CopyToBuffer(BufferAddress, Count);
+    end;
+end;
+
+Procedure FlushBuffer;
+{ This procedure will zero any bytes remaining in the current virtual block }
+{ and will force the system to write the current contents of the buffer to  }
+{ the destination via a call to WriteDestination.                           }
+var
+    Count   : LongInt;
+    Msg     : textBlock;
+    Junk    : Integer;
+begin
+    Count := (ByteIndex div ord4(BlockByteCount)) * ord4(BlockByteCount);
+ 
+    If Count < ByteIndex then
+        Count := Count + ord4(BlockByteCount);
+ 
+    If (Count <> ByteIndex) then                { Dont try to zero no bytes }
+        If CopyToBuffer(Nil, Count - ByteIndex) <> 0
+        then
+            begin
+                Msg := concat('62:A program error has occurred (Error code $0001), ',
+                              'please contact Powerup Technology as soon as ',
+                              'possible.:^#0');
+
+                Junk := AlertWindow(0,Nil,@Msg);
+                UserAbort := True;
+            end
+        else
+            ByteIndex := Count;
+ 
+    If not UserAbort then
+    begin
+        WriteDestination;
+        filesLeftToDo := BackupHeader.numLeft;
+    end;
+end;
+
+Procedure ReadBackup;
+{ Reads specified number of blocks from saveset.  Note, that this code assumes }
+{ that the number of blocks will never be greater than :                       }
+{      WorkBufferSize div BlockByteCount                                       }
+
+    Procedure ReadFromDisk;
+    { Will read the specified number of blocks from the disk into WorkArea }
+    var
+        ReadParams      :   devReadWriteOSDCB;
+        Msg             :   textBlock;
+        spaceLeft       :   longint;
+        errCode         :   integer;
+        tmpString       :   pString;
+        xferCount       :   longint;
+        offset          :   longint;
+        byteCount       :   longint;
+
+        Procedure ReadBytes(inBytes  : longint);
+        var
+            readIsComplete : Boolean;
+        begin
+            With SavesetLocation do
+            begin
+                With ReadParams do
+                begin
+                    pcount := 6;
+                    devNum := DeviceNum;
+                    buffer := pointer(ord4(WorkArea) + ByteIndex + offset);
+                    requestCount := inBytes;
+                    startingBlock := ord4(CurrentBlock);
+                    blockSize := BlockByteCount;
+                end;
+ 
+                readIsComplete := False;
+
+                Repeat
+                    DReadGS(ReadParams);
+                    errCode := ToolError;
+
+                    with ReadParams do
+                        CurrentBlock := CurrentBlock + ord(transferCount div
+                                                           ord4(BlockByteCount));
+
+                    If errCode = 0
+                    then
+                        readIsComplete := True
+                    else
+                        begin
+                            errCode := 0;
+
+                            with currentEntry^.FileName do
+                                Msg := concat('74',chr(1),
+                                              'An I/O error has occured on the ',
+                                              'Backup disk whilst extracting the ',
+                                              'file "',copy(theString.theString,1,theString.size),'".  ',
+                                              'Do you wish to continue or cancel ',
+                                              'the restoration ?',chr(1),'^#6',
+                                              chr(1),'#1');
+ 
+                            If AlertWindow(0,Nil,@Msg) = 1 then
+                                UserAbort := True;
+ 
+                            If not UserAbort then
+                            begin
+                                EZForceRefresh;
+
+                                With ReadParams do
+                                begin
+                                    startingBlock := startingBlock + 1 +
+                                                     (transferCount div BlockByteCount);
+                                    buffer := Pointer(ord4(buffer) + transferCount +
+                                                      ord4(BlockByteCount));
+                                    requestCount := requestCount - transferCount -
+                                                    ord4(BlockByteCount);
+                                    CurrentBlock := CurrentBlock + 1;
+                                end;
+                            end;
+                        end;
+
+                    If (errCode <> 0) then
+                       UserAbort := True;
+                Until UserAbort or
+                      readIsComplete;
+            end;
+        end;
+    begin
+        With SavesetLocation do
+        begin
+            byteCount := ord4(numOfBlocks * ord4(BlockByteCount));
+            offset := 0;
+
+            while (byteCount > 0) and
+                  (not UserAbort) do
+            begin
+                with DeviceDescr do
+                    spaceLeft := ord4(ord4(totalBlocks) - ord4(CurrentBlock)) * 
+                                 ord4(BlockByteCount);
+
+                If spaceLeft < byteCount
+                then
+                    xferCount := spaceLeft
+                else
+                    xferCount := byteCount;
+
+                ReadBytes(xferCount);
+
+                If not UserAbort then
+                begin
+                    If spaceLeft < byteCount then
+                    begin
+                        NumOfDisks := NumOfDisks + 1;
+                        EZEjectDisk(deviceNum);
+                        UserAbort := not RequestDisk(NumOfDisks);
+                    end;
+
+                    byteCount := byteCount - xferCount;
+                    offset := offset + xferCount;
+                end;
+            end;
+        end;
+
+        If (errCode <> 0) then
+        begin
+            Msg := concat('Read error while attempting ',
+                          'to read from the saveset.');
+     
+            UserAbort := ProdosError(ToolError, Msg, True);
+        end;
+    end;
+ 
+    Procedure ReadFromFile;
+    { Will read the specified number of virtual blocks from the file.      }
+    var
+        Msg         :   textBlock;
+    begin
+        With WriteFileParams do
+        begin
+            pcount := 5;
+            dataBuffer := Pointer(ord4(WorkArea) + ord4(ByteIndex));
+            requestCount := ord4(NumOfBlocks * ord4(BlockByteCount));
+            cachePriority := 0;
+        end;
+ 
+        ReadGS(WriteFileParams);
+ 
+        If ToolError <> 0 then
+        begin
+            Msg := concat('Read error while attempting ',
+                          'to read from the backup file. ',
+                          'Aborting Restoration.');
+ 
+            UserAbort := ProdosError(ToolError, Msg, False);
+        end;
+    end;
+
+begin
+    With SavesetLocation do
+    begin
+        Case DestType of
+            0           :   ReadFromDisk;
+            1           :   ReadFromFile;
+            otherwise   ;
+        end;
+    end;
+
+    ByteIndex := ByteIndex + ord4(NumOfBlocks * ord4(BlockByteCount));
+end;
+
+Procedure SetSavesetPosition;
+
+    Procedure PositionDisk;
+    var
+        DiskWanted      :   Integer;
+    begin
+        With SavesetLocation do
+        begin
+            DiskWanted := ord(ord4(BlockNumber div ord4(UsedBlocks))) + 1;
+
+            If DiskWanted <> NumOfDisks
+            then
+                begin
+                    UserAbort := not RequestDisk(DiskWanted);
+
+                    If not UserAbort then
+                    begin
+                        CurrentBlock := FirstBlock +
+                                        ord(ord4(BlockNumber mod ord4(UsedBlocks)));
+                        NumOfDisks := DiskWanted;
+                    end
+                end
+            else
+                begin
+                    CurrentBlock := FirstBlock + ord(ord4(BlockNumber mod ord4(UsedBlocks)));
+                end;
+        end;
+    end;
+ 
+    Procedure PositionFile;
+    var
+        SetMarkParams   :   setMarkOSDCB;
+    begin
+        with SetMarkParams do
+        begin
+            pcount := 3;
+            refNum := WriteFileParams.refNum;
+            base := 0;
+            displacement := ord4(ord4(BlockNumber) * ord4(BlockByteCount));
+        end;
+ 
+        SetMarkGS(SetMarkParams);
+    end;
+
+begin
+    With SavesetLocation do
+    begin
+        Case DestType of
+            0           :   PositionDisk;
+            1           :   PositionFile;
+            otherwise   ;
+        end;
+    end;
+end;
+
+end.
