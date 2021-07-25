@@ -1,4 +1,4 @@
-delete int/=.int
+delete intf/=.int
 delete obj/=.a
 delete obj/=.root
 delete obj/=.obj

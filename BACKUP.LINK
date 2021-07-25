@@ -1,7 +1,6 @@
 -o obj/ezbackup
 -t $b3
 
-obj/backup.root
 obj/backup.a
 obj/backasm.a
 
@@ -53,7 +52,8 @@ obj/backinit.a
 obj/backmenu.a
 obj/backevent.a
 
--lib 2/ezlib
--lib 2/backuplib
--lib 2/paslib
--lib 2/syslib
+-lib 13/ezlib
+-lib 13/paslib
+-lib 13/syslib
+-lib 13/sysfloat
+-lib 13/orcalib

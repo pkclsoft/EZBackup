@@ -402,7 +402,7 @@ var
     ByteCount       :   LongInt;
     PathString      :   GSOSInString;
     BlockNumber     :   Integer;
-    SetInfoParms    :   ezSetFileInfoOSDCB;
+    SetInfoParms    :   setFileInfoOSDCB;
     optionListLen   :   integerPtr;
     BlockCount      :   Integer;
     clearBkParm     :   clrBkupBitOSDCB;
@@ -538,7 +538,7 @@ begin
                 modDateTime := DirEntry.modDateTime;         { mod date and time make up a single parameter.            }
             end;
  
-            EZSetFileInfoGS(SetInfoParms);
+            SetFileInfoGS(SetInfoParms);
 
             If pref.backupBitsToBeCleared then
             begin
@@ -617,7 +617,7 @@ var
     ByteCount       :   LongInt;
     PathString      :   GSOSInString;
     BlockNumber     :   longint;
-    SetInfoParms    :   ezSetFileInfoOSDCB;
+    SetInfoParms    :   setFileInfoOSDCB;
     optionListLen   :   integerPtr;
     BlockCount      :   longint;
     clearBkParm     :   clrBkupBitOSDCB;
@@ -817,7 +817,7 @@ begin
                 modDateTime := DirEntry.modDateTime;         { mod date and time make up a single parameter.            }
             end;
  
-            EZSetFileInfoGS(SetInfoParms);
+            SetFileInfoGS(SetInfoParms);
 
             If pref.backupBitsToBeCleared then
             begin

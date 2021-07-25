@@ -166,66 +166,18 @@ obj/backup.a
     obj/backdata.a
     obj/backinit.a
     obj/backevent.a
-        { compile backup.pas keep=obj/$ }
-
-obj/backuplib
-	obj/backevent.a
-	obj/backpref.a
-	obj/backasm.a
-	obj/backback.a
-	obj/backbad.a
-	obj/backbufr.a
-	obj/backcat.a
-	obj/backdata.a
-	obj/backdisk.a
-	obj/backedit.a
-	obj/backinit.a
-	obj/backlist.a
-	obj/backlow.a
-	obj/backmenu.a
-	obj/backmisc.a
-	obj/backread.a
-	obj/backrest.a
-	obj/backsave.a
-	obj/backup.a
-	obj/backwrite.a
-	obj/backcopy.a
-	{
-		delete obj/backuplib
-		makelib obj/backuplib +obj/backevent.a
-		makelib obj/backuplib +obj/backpref.a
-		makelib obj/backuplib +obj/backasm.a
-		makelib obj/backuplib +obj/backback.a
-		6/purge
-		makelib obj/backuplib +obj/backbad.a
-		makelib obj/backuplib +obj/backbufr.a
-		makelib obj/backuplib +obj/backcat.a
-		6/purge
-		makelib obj/backuplib +obj/backdata.a
-		makelib obj/backuplib +obj/backdisk.a
-		makelib obj/backuplib +obj/backedit.a
-		makelib obj/backuplib +obj/backinit.a
-		6/purge
-		makelib obj/backuplib +obj/backlist.a
-		makelib obj/backuplib +obj/backlow.a
-		makelib obj/backuplib +obj/backmenu.a
-		makelib obj/backuplib +obj/backmisc.a
-		6/purge
-		makelib obj/backuplib +obj/backread.a
-		makelib obj/backuplib +obj/backrest.a
-		makelib obj/backuplib +obj/backsave.a
-		6/purge
-		makelib obj/backuplib +obj/backwrite.a
-		makelib obj/backuplib +obj/backcopy.root
-		makelib obj/backuplib +obj/backcopy.a
-		6/purge
-	}
+        { 
+        	compile backup.pas keep=obj/$
+			move obj/backup.a obj/backup.b
+			move obj/backup.root obj/backup.a
+			crunch obj/backup
+		}
 	
 obj/ezbackup
     obj/backup.a
-    obj/backuplib
-        { link obj/backup obj/backuplib 13/ezlib 13/paslib 13/syslib keep=obj/ezbackup
-          delete ez.backup }
+        { 
+        	linkiigs < backup.link
+        	delete ez.backup }
 
 ez.backup
     obj/ezbackup
