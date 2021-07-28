@@ -23,6 +23,9 @@ implementation
 Const
 {$ copy 'BackTConst.Inc' }
 
+var
+    TmpString   :   pString;
+
 Procedure RefreshEditWindows;
 begin
     DrawControls(GetPort);
@@ -30,8 +33,6 @@ end;
 
 Procedure RefreshDetailWindow;
 var
-    TmpString   :   pString;
-    TmpText     :   textBlock;
     savePort    :   grafPortPtr;
     tmpRect     :   rect;
 begin
@@ -62,16 +63,16 @@ begin
                 DrawString(@TmpString);
                 DrawString(@' files, totalling ');
 
-                Long2Dec(BackupLength div 1024, @TmpText, 6, False);
-                DrawText(@TmpText,6);
+                Long2Dec(BackupLength div 1024, @TmpString, 6, False);
+                DrawText(@TmpString,6);
                 DrawString(@'K ');
 
                 If SavesetLocation.DestType = 0 then
                 begin
                     DrawString(@'(');
 
-                    Long2Dec(TotalDisks, @TmpText, 2, False);
-                    DrawText(@TmpText,2);
+                    Long2Dec(TotalDisks, @TmpString, 2, False);
+                    DrawText(@TmpString,2);
                     DrawString(@' disk(s) [+ list disk]) ');
                 end;
 
@@ -132,6 +133,8 @@ const
 
     folders             =   0;
     files               =   1;
+
+    EditBufferSize      =   $00010000;
 
 type
     fpString            =   packed array [0..32] of char;
@@ -195,12 +198,9 @@ var
     EditBufferHandle    :   handle;
     EditBuffer          :   ptr;
 
-    Msg                 :   textBlock;
     buttonPressed       :   Integer;
 
     Procedure ObtainEditBuffer;
-    const
-        EditBufferSize  =   $00010000;
     begin
         EditBufferHandle  := NewHandle(EditBufferSize, userID,
                                        attrLocked  + attrFixed +
@@ -219,7 +219,7 @@ var
         memberNumber    :   integer;
     begin
         dirList := Pointer(EditBuffer);
-        fileList := Pointer(ord4(EditBuffer) + ord4(32768));
+        fileList := Pointer(ord4(EditBuffer) + ord4(EditBufferSize) / ord4(2));
 
         selectedDir := 1;
         selectedFile := 1;
@@ -510,7 +510,6 @@ var
         fileMember      : Integer;
         curEntry        : FileRecPtr;
         StartChar       : Integer;
-        TmpString       : pString;
     begin
         fileMember := 1;
  
@@ -1424,7 +1423,6 @@ var
     var
         menuCtl         : ctlRecHndl;
         selectedItem    : integer;
-        tmpString       : pStringPtr;
         popupPtr        : popupCtlRecPtr;
         itemPtr         : cStringPtr;
         namelen         : integer;
@@ -1524,8 +1522,7 @@ var
         ftptr           :   pStringPtr;
         Date            :   DateRecord;
         Time            :   TimeRecord;
-        tmpString       :   pString;
-        tmpText         :   packed array [1..10] of char;
+        tmpText         :   HexString;
         kLength         :   longint;
         fTypeString     :   pString;
     begin
@@ -1551,10 +1548,10 @@ var
 
                         if ftptr = nil then
                         begin
-                            HEX(fileType, 2, tmpString);
-                            fTypeString := concat('Type $',tmpString,', subtype $');
-                            HEX(auxType, 4, tmpString);
-                            fTypeString := concat(fTypeString, tmpString);
+                            HEX(fileType, 2, tmpText);
+                            fTypeString := concat('Type $',tmpText,', subtype $');
+                            HEX(auxType, 4, tmpText);
+                            fTypeString := concat(fTypeString, tmpText);
                             ftptr := @fTypeString;
                         end;
                     end;
@@ -1976,12 +1973,12 @@ begin
     If EditBuffer = Nil
     then
         begin
-            Msg := concat('42:There is not enough memory available to edit ',
+            TmpString := concat('42:There is not enough memory available to edit ',
                           'the file list.  Would you like to select all files ',
                           'in the saveset or abort the backup?',
                           ':^Select All:Abort');
 
-            buttonPressed := AlertWindow(0,Nil,@Msg);
+            buttonPressed := AlertWindow(0,Nil,@TmpString);
 
             If buttonPressed = 0
             then

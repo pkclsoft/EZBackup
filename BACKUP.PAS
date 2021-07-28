@@ -1,6 +1,6 @@
 {$ keep 'obj/Backup'   }
 {$ memorymodel 0   }
-{$ Stacksize 16384 }
+{$ Stacksize 32768 }
 Program Backup(Input, Output, ErrorOutput);
 
 Uses Common, QuickdrawII, ControlMgr, WindowMgr, GSOS, DialogMgr,

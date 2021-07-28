@@ -18,6 +18,15 @@ Procedure FormatEraseDisk;
 
 implementation
 
+var
+    deviceList          : devMemberList;
+    DeviceName          : GSOSInString;
+    VolumeNameRequested : GSOSInString;
+    VolumeName          : GSOSOutString;
+ 
+    TmpString           : pString;
+    AlertString         : textBlock;
+
 {$ Segment 'Disk' }
 
 Procedure RefreshFEDialog;
@@ -61,17 +70,10 @@ var
  
     ctlList             : array [1..NullItem] of ptr;
  
-    deviceList          : devMemberList;
     SelectedMem         : integer;
     devListSize         : integer;
     memberNumber        : integer;
  
-    DeviceName          : GSOSInString;
-    VolumeNameRequested : GSOSInString;
-    VolumeName          : GSOSOutString;
- 
-    TmpString           : pString;
-    AlertString         : textBlock;
     Junk                : Integer;
     FormatEraseParms    : formatOSDCB;
  
@@ -79,9 +81,6 @@ var
     var
         DeviceNum           : Integer;
         VolumeParms         : volumeOSDCB;
-        DeviceName          : GSOSInString;
-        VolumeName          : GSOSOutString;
-        TmpString           : pString;
     begin
         SelectedMem := EZNextMember(0, DeviceListItem);
         DeviceNum := ord(deviceList[SelectedMem].memDevice);
@@ -106,19 +105,16 @@ var
         If ToolError = 0
         then
             begin
-                With VolumeName do
-                    TmpString := copy(theString.theString, 1, theString.size);
-
                 SetRadioButton(On, FormatDiskItem);
                 Activate(EraseDiskItem);
             end
         else
             begin
-                TmpString := '';
+                VolumeName.theString.theString := '';
                 Deactivate(EraseDiskItem);
             end;
  
-        SetlineEditText(TmpString, False, VolumeNameItem);
+        SetlineEditText(VolumeName.theString.theString, False, VolumeNameItem);
     end;
 
 begin

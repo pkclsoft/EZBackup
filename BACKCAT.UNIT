@@ -22,6 +22,9 @@ implementation
 
 {$ segment 'Catalog'            }
 
+var
+    AlertMsg             :   textBlock;
+
 Procedure RefreshCatalogParms;
 begin
     SetForeColor(0);
@@ -58,12 +61,10 @@ var
     deviceList          : devMemberList;
     numOfDevices        : integer;
 
-    Msg                 : packed array [1..150] of char;
     Junk                : Integer;
 
     Procedure SelectOutputDevice;
     var
-        DeviceName      :   GSOSOutString;
         Count           :   Integer;
         SelectedMember  :   Integer;
     begin
@@ -233,11 +234,11 @@ begin
             begin
                 If (SavesetLocation.DeviceType = AppletalkFileServer) then
                 begin
-                    Msg := concat('64:Note that you are unable to read directly ',
+                    AlertMsg := concat('64:Note that you are unable to read directly ',
                                   'from a file server, so the Saveset will be retrieved ',
                                   'from a file on the file server.:^#6');
     
-                    Junk := AlertWindow(0,Nil,@Msg);
+                    Junk := AlertWindow(0,Nil,@AlertMsg);
                 end;
 
                 UserAbort := not SelectSourceFile;
@@ -252,7 +253,6 @@ end;
 
 Procedure catalogSaveset;
 var
-    Msg         : textBlock;
     Junk        : Integer;
 begin
     If OpenSaveset then
@@ -266,11 +266,11 @@ begin
             EditFileList(2)
         else
             begin
-                Msg := concat('23:',
+                AlertMsg := concat('23:',
                               'The Catalog operation has ',
                               'been cancelled.',
                               ':^#0');
-                Junk := AlertWindow(0,Nil,@Msg);
+                Junk := AlertWindow(0,Nil,@AlertMsg);
             end;
  
         DeleteFileList;
