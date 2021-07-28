@@ -24,7 +24,8 @@ Const
 {$ copy 'BackTConst.Inc' }
 
 var
-    TmpString   :   pString;
+    TmpString         :   pString;
+    DetailTmpString   :   pString;
 
 Procedure RefreshEditWindows;
 begin
@@ -59,20 +60,20 @@ begin
             DrawString(@'no files.')
         else
             begin
-                TmpString := cnvis(NumOfFiles);
-                DrawString(@TmpString);
+                DetailTmpString := cnvis(NumOfFiles);
+                DrawString(@DetailTmpString);
                 DrawString(@' files, totalling ');
 
-                Long2Dec(BackupLength div 1024, @TmpString, 6, False);
-                DrawText(@TmpString,6);
+                Long2Dec(BackupLength div 1024, @DetailTmpString, 6, False);
+                DrawText(@DetailTmpString,6);
                 DrawString(@'K ');
 
                 If SavesetLocation.DestType = 0 then
                 begin
                     DrawString(@'(');
 
-                    Long2Dec(TotalDisks, @TmpString, 2, False);
-                    DrawText(@TmpString,2);
+                    Long2Dec(TotalDisks, @DetailTmpString, 2, False);
+                    DrawText(@DetailTmpString,2);
                     DrawString(@' disk(s) [+ list disk]) ');
                 end;
 
@@ -390,7 +391,6 @@ var
         dirMember       : Integer;
         curEntry        : FileRecPtr;
         StartChar       : Integer;
-        TmpString       : pString;
     begin
         dirMember := 1;
  
@@ -1206,13 +1206,13 @@ var
                     begin
                         curEntry := curEntry^.NextFile;
 
-            { If there are indeed some files within the directory, then     }
-            { search down the list and include them all.                    }
+                        { If there are indeed some files within the directory, then     }
+                        { search down the list and include them all.                    }
 
                         If curEntry <> Nil then
                         begin
-                { now make sure that all files in the directory tree below  }
-                { this directory are marked.                                }
+                            { now make sure that all files in the directory tree below  }
+                            { this directory are marked.                                }
 
                             while not EndOfLoop(currentDirectory, curEntry) do
                             begin
@@ -1304,7 +1304,7 @@ var
             memberNumber := memberNumber + 1;
         end;
 
-            { ensure that all parents are marked }
+        { ensure that all parents are marked }
 
         If oneSelected then
         begin
@@ -1427,8 +1427,6 @@ var
         popupPtr        : popupCtlRecPtr;
         itemPtr         : cStringPtr;
         namelen         : integer;
-        selectedName    : pString;
-        entryName       : pathName;
         curEntry        : fileRecPtr;
         levels          : integer;
         closeFromFolder : FileRecPtr;
@@ -1475,11 +1473,8 @@ var
 
             While curEntry <> Nil do                { Insert directory names   }
             begin                                   { and separator's.         }
-                entryName := copy(curEntry^.FileName.theString.theString,
-                                  1,
-                                  curEntry^.FileName.theString.size);
                 Insert(Separator, popupString, 1);
-                Insert(entryName, popupString, 1);
+                Insert(curEntry^.FileName.theString.theString, popupString, 1);
                 curEntry := curEntry^.ParentDir;
             end;
 
@@ -1525,7 +1520,7 @@ var
         Time            :   TimeRecord;
         tmpText         :   HexString;
         kLength         :   longint;
-        fTypeString     :   pString;
+        fTypeString     :   packed array [0..40] of char;
     begin
         SetPort(fPort);
         SelectWindow(fPort);
