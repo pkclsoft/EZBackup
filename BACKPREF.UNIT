@@ -20,6 +20,8 @@ Procedure setPreferences;
 
 implementation
 
+{$ Segment 'Miscel.03' }
+
 Procedure changePreferences;
 const
     OkItem              = 1;

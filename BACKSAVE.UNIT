@@ -20,6 +20,8 @@ Function SelectDestinationFile : Boolean;
 
 implementation
 
+{$ Segment 'LowLevel' }
+
 Function SelectSourceFile;
 var
     MyReply        : replyRecord5_0;

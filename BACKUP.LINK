@@ -1,6 +1,7 @@
 -o obj/ezbackup
 -t $b3
 
+obj/backup.root
 obj/backup.a
 obj/backasm.a
 

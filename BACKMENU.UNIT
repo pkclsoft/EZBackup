@@ -20,7 +20,7 @@ Procedure HandleMenu(    LastEvent : EventRecord;
 
 implementation
 
-{$ segment 'Events'             }
+{$ segment 'System'             }
 
 Const
 {$ copy 'BackTConst.Inc' }

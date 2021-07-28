@@ -45,6 +45,8 @@ Procedure getPreferences;
 
 implementation
 
+{$ Segment 'Miscel.01' }
+
 Const
 {$ copy 'BackTConst.Inc' }
 

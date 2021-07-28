@@ -18,6 +18,8 @@ Procedure EventLoop;
 
 implementation
 
+{$ Segment 'System' }
+
 Procedure EventLoop;
 var
     Done        : Boolean;          { tells if the program should Stop  }

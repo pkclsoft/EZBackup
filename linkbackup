@@ -1,0 +1,5 @@
+set backfirst obj/backup obj/backasm obj/backdata obj/backcopy obj/backmisc obj/backlow
+set backsecond obj/backbufr obj/backsave obj/backlist obj/backwrite obj/backread
+set backthird obj/backedit obj/backpref obj/backcat obj/backdisk obj/backbad
+set backfourth obj/backback obj/backrest obj/backinit obj/backmenu obj/backevent
+link {backfirst} {backsecond} {backthird} {backfourth} 13/ezlib keep=obj/ezbackup

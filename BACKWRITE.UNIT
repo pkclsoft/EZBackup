@@ -24,6 +24,8 @@ Procedure BackupFile(FileEntry : FileRecPtr);
 
 implementation
 
+{$ Segment 'Miscel.02' }
+
 Function OpenDest;               { Returns true if the user has elected to }
 const                            { cancel the backup when asked to insert  }
     DiskDev = 0;                 { a disk to write to, or when an error    }

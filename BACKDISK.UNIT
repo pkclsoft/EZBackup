@@ -18,6 +18,8 @@ Procedure FormatEraseDisk;
 
 implementation
 
+{$ Segment 'Disk' }
+
 Procedure RefreshFEDialog;
 var
     DestRectPtr : ^Rect;

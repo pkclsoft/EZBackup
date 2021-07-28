@@ -20,6 +20,8 @@ Function RestoreParametersSet : Boolean;
 
 implementation
 
+{$ Segment 'Restore' }
+
 Const
 {$ copy 'BackTConst.Inc' }
 

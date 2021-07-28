@@ -20,7 +20,7 @@ Procedure ShutDown;
 
 implementation
 
-{$ segment 'MainEntry'          }
+{$ segment 'System'          }
 
 Const
 {$ copy 'BackTConst.Inc' }

@@ -20,7 +20,7 @@ Procedure catalogSaveset;
 
 implementation
 
-{$ segment 'Restore'            }
+{$ segment 'Catalog'            }
 
 Procedure RefreshCatalogParms;
 begin

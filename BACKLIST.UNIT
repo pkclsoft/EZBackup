@@ -21,7 +21,7 @@ Procedure ComputeHeaderDetails(entryMode    :   integer);
 
 implementation
 
-{$ segment 'Miscel02'           }
+{$ segment 'Miscel.02'           }
 
 Const
 {$ copy 'BackTConst.Inc' }

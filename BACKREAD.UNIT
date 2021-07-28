@@ -20,6 +20,8 @@ Procedure ReadHeader;
 
 implementation
 
+{$ Segment 'Miscel.02' }
+
 Function OpenSaveset;               { Returns true if the user has elected to }
 const                               { cancel the restoration when asked to    }
     DiskDev = 0;                     { insert a disk to read from, or when an  }

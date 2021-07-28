@@ -168,12 +168,15 @@ obj/backup.a
     obj/backevent.a
         { 
         	compile backup.pas keep=obj/$
+			move obj/backup.a obj/backup.b
+			move obj/backup.root obj/backup.a
+			crunch obj/backup
 		}
 	
 obj/ezbackup
     obj/backup.a
         { 
-        	linkbackup 
+        	linkiigs < backup.link
         	delete ez.backup }
 
 ez.backup

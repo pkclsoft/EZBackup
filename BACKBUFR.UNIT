@@ -25,6 +25,8 @@ Procedure SetSavesetPosition(BlockNumber : longint);
 
 implementation
 
+{$ Segment 'LowLevel' }
+
 Procedure WriteDestination;
 { Will write the current contents of the Work Area to the destination, be it  }
 { a file or a disk.  If during the write, the destination runs out of room,   }

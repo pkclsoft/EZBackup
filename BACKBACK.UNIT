@@ -20,6 +20,8 @@ Function StartBackup : Boolean;
 
 implementation
 
+{$ Segment 'Backup' }
+
 var
     CBPort              :   grafPortPtr;
     CBPercent           :   real;
