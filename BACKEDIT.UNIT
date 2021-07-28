@@ -1524,7 +1524,7 @@ var
         ftptr           :   pStringPtr;
         Date            :   DateRecord;
         Time            :   TimeRecord;
-        tmpString       :   pString;
+        tmpString       :   HexString;
         tmpText         :   packed array [1..10] of char;
         kLength         :   longint;
         fTypeString     :   pString;
