@@ -135,6 +135,7 @@ const
     files               =   1;
 
     EditBufferSize      =   $00010000;
+    EditBufferHalfSize  =   $00008000;
 
 type
     fpString            =   packed array [0..32] of char;
@@ -219,7 +220,7 @@ var
         memberNumber    :   integer;
     begin
         dirList := Pointer(EditBuffer);
-        fileList := Pointer(ord4(EditBuffer) + ord4(EditBufferSize) / ord4(2));
+        fileList := Pointer(ord4(EditBuffer) + ord4(EditBufferHalfSize));
 
         selectedDir := 1;
         selectedFile := 1;
