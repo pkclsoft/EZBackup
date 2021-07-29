@@ -65,6 +65,8 @@ const
     viewMode            = 2;
 
 Type
+    pFilenameString = ^FilenameString;
+
     DestinationRecord   = Record
                             Title           : pString;
                             DestType        : Integer;  { 0=disk, 1=file }
