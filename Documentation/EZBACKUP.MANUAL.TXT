@@ -1,0 +1,322 @@
+EZ-Backup v1.1 designed and written by 	Peter C. Easdown
+	EZ-Soft (now defunct)
+ 	Australia
+
+This manual generously written by	Joe C. Altoff 
+	Power Up
+	Australia
+
+Shareware Notice (for nostalgia only)
+-------------------------------------
+
+This program is Shareware.  This means that you may copy it, and distribute it at no cost to you.  It also means that you may not charge anyone you give a copy to for anything other than the act of copying it.
+
+WARNING!  When copying this program, remember to use a program that copies the resource fork of the file as well, as EZBackup places a lot of run-time information in it's resource fork.
+
+You are however obliged to send US$20 to the author (shown at the top of this page) if you decide to use it.  The author also requests that this documentation (in both formats, Appleworks GS and Standard Text File) be distributed unchanged along with the Executable and Icon Files.
+
+In the event that the reader has obtained a copy of EZBackup that does not include a shareware notice under the Apple Menu, but does display a serial number in the About window, s/he is requested to contact the Author as soon as possible, and quote the serial number.
+
+Those people who register with the author by sending in the US$20 will be advised immediately of any updates to the program, and will be entitled to support from the author in the case of any problems.
+
+Should anyone have any problem or suggestions relating to EZBackup, please don't hesitate to contact me through the Post at the address supplied above.  
+
+About this Manual
+
+	This manual is designed to allow the experienced user to get straight into a backup or (heaven forbid) restore operation.  For the less experienced user the manual will (hopefully) explain the ins and outs of using EZBackup in an easy to understand manner.
+
+	Throughout this manual there are many important points which have been highlighted by the use of italics.  
+
+About EZBackup
+
+	A backup program has two functions :
+
+- to backup hard-drives or other large volumes to a convenient media
+- to restore from that media back to the original volume
+
+	EZBackup does both these functions quickly and efficiently.  Future versions will include a disk optimiser and bad block lockout functions as an added bonus (EDIT: which never happened).
+
+	EZBackup is an easy to use yet powerful backup program.  It is fully 'Network Aware' and can backup and restore Macintosh files from a file server.  Files may be backed up from a file server and restored to a hard-drive on another machine.
+
+	EZBackup is completely compatible with all standard GS/OS devices.  This means that any type of disk drive that works with GS/OS should work with EZBackup - This ensures compatibility with both current and future system software for the Apple //gs.
+
+	See the 'Limitations' section of the manual for any special circumstances which may cause problems with the operation of EZBackup.
+
+	EZ-Backup is a program designed to allow you to easily backup your valuable data from your hard-drive to floppy disks.
+
+For Those Who Can't Wait
+
+	For those who would like to get into using EZBackup straight away here is a quick rundown on how to backup and restore your files.
+
+Creating a Backup
+
+1.	Launch EZBackup
+2.	Select the 'Backup' option from the 'File' menu
+3.	Select the volume to be backed up
+4.	Select the device type to which you wish the backup to go
+5.	If you are doing an incremental backup then click in the 	'Changed files only' checkbox
+6.	Click on the 'Select files' button
+7.	Select the files to be backed up
+8.	Click the 'Ok' button
+9.	Click the 'Backup' button
+10.	Insert disks as required until backup is complete
+
+Restoring a Backup
+
+1.	Launch EZBackup
+2.	Select the 'Restore' option from the 'File' menu
+3.	Select the source of the backup file from the left device list
+4.	Select the destination to be restored to from the right volume 	list
+5.	Create a new folder for the restoreation if needed by inserting a 	folder name and clicking 'New Folder'
+5.	Insert a 'File List' disk if necessary
+6.	Click on the 'Select Files' button
+7.	Select the files to be restored
+8.	Click the 'Ok' button
+9.	Click the 'Restore' Button
+10.	Insert disks as required until the restoration is complete
+
+Why Backup ?
+
+	Although todays computer technology is extremely rugged and reliable there is still the chance of problems occurring.
+
+	There are many things which may cause you to lose your valuable data.  These include the following :
+
+	- power outages
+	- baby brother pulls the hard-drive off the table
+	- you 'accidentally' delete some important files
+	- mysterious GS/OS errors that won't go away
+	- a virus reformats your hard-drive
+	- you copy an old version of a program over the only copy of the new version you have
+
+	To be assured of your data's safety you should do regular backups.
+
+	Doing a backup is in no way painful and will ensure that in the case of a catastrophe you will be able to return to (almost) where you left off.
+
+Backup Types
+
+	There are 2 main 'types' of backup.  These are 'full' and 'incremental'.
+
+	A full backup consists of all the files on the volume being backed up being included in the backup save set.
+
+	An incremental backup consists of only those files which have changed since the last backup.  The previous backup may have been a full or incremental backup so it is important to keep all the incremental backups between full backups. Should any loss of data occur the files can be replaced firstly from the full backup and then progressively by the incremental backups.
+
+	It is important that the incremental backups are restored in the correct order so as to end up with the latest versions of all files.
+
+The Art of Backing Up
+
+	A good backup schedule is important.  There is no point to doing monthly backups if your data changes dramatically on a weekly basis.
+
+	Work out how often your hard-drive's data would change and do a complete backup at that interval.  If your data changes on a weekly basis then do a complete backup each week and a 'changed files only' (or incremental)  backup daily.  If on the other hand a monthly complete backup would suit your needs better only do a backup then.
+
+	A complete backup will take much longer than an incremental backup but it is a starting point for your backup schedule.  An incremental backup will probably take less than 5 minutes on a daily basis.
+
+	It is also a good idea to keep two sets of backup disks in case one set fails.  In this way you are continually rotating your backup disks and if one disk does go faulty then you can more than likely replace any missing files from the other backup set.
+
+Important Note: 	You must keep all incremental backups between full backups in order to restore your data to it's original state.
+
+Backing Up
+
+	Backups may be made to any type of removable device (ie 5.25" or 3.5" drives) on your system as well as to a file on another disk.
+
+	Most people will do their backups to 3.5" disks but if you are lucky enough to own a second hard-drive or have access to a file server on a network you can do a complete backup of your hard-drive as a single file without having to swap disks.  If you are doing a backup to a file server it will take longer due to the limitation imposed by the speed of the network.  (I would reccomend starting a backup to a file server before you went off to lunch - with luck it will be finished when you get back)
+
+	Assuming that you have already managed to launch EZBackup here is what to do to create a backup.
+
+	From the file menu select the 'Backup' option.  Once selected the screen will change to show a list of online volumes on the left and a list of available backup alternatives on the right.  Choose the volume that you wish to backup from the list on the left by clicking on it.  If the volume you wish to backup is not in the list click on the 'Rescan Volumes' button.  Now choose the backup alternative which you wish to use from the list on the right.  You can choose any of your current removeable media devices (3.5" disk drives, 5.25" disk drives etc) or you may backup to a file on another disk (a file server or another hard-drive).
+
+	If you are intending to do an incremental backup then you must check the 'Changed files only' checkbox (that is make an X appear within the checkbox by clicking in it).
+
+	Now click on the 'Select files' button and EZBackup will read in a list of all the files on the selected volume and then show a list of folders on the left and a list of the files (and other folders) inside the currently selected folder on the right.  From here you can select which files you wish to backup by using the 'Include' and 'Exclude' buttons.
+
+	To include a file (or folder and all files/folders below it) highlight the file (or folder) in it's appropriate list and click the 'Include' button.  Similarly to exclude a file (or folder and all files/folders below it) highlight the file (or folder) in it's appropriate list and click the 'Exclude' button.
+
+	You can get information about a file by highlighting it and clicking on the 'File Information' button.
+
+	A list of all the symbols which appear next to a file (or folder) name can be seen by clicking on the 'Help' button.
+
+	When you have selected all the files you wish to backup click on the 'Ok' button to return you to the backup window.
+
+	You are now ready to start your backup so click on the 'Backup' button.
+
+	EZBackup will start reading files from the volume you are backing up and prompt you to insert the first backup disk.  When EZBackup has read all it can into the memory of your Apple //GS it will start to write the files out to the backup disks.  If the disk you have inserted is not formatted then EZBackup will attempt to format it first.
+
+	If any of the backup disks are already formatted and are not named correctly (ie Backup.001 etc) then EZBackup will prompt you before it overwrites their contents.
+
+	Continue to insert backup disks until the EZBackup asks for a 'File List' disk.  At this point you must insert a disk which will be used as the catalog of your backup.
+
+	Without the 'File List' disk EZBackup will be unable to restore any files.
+
+	After the 'File List' disk has been written the backup is complete.
+
+Restoring Files
+
+	Should a tradgedy occur and you do lose some or all of your data then it is a simple matter to recover those files from your backup.
+
+	In the worst case of a hard-drive failure (or crash) you will have to reformat (or reinitialise) your hard-drive and replace all the files which were on it originally from your backup.  In most cases however you will probably only have to do a partial restoration to replace only a few corrupted/missing files.  During a restore you can restore all or just some of the files from your backup.  EZBackup will allow you to redirect your restoration to a different volume or to a different folder than the files originally came from.
+
+Beginning a Restoration
+
+	Start by selecting 'Restore' from the 'File' menu.  You will be presented with a list of choices from which you can restore on the left and a list of possible destinations on the right. 
+
+	If you are restoring from a file then select 'From a GS/OS File' from the left hand list.  If you are restoring from a removable media device (such as a 3.5" or 5.25" disk) then select the appropriate device from the list on the left.
+
+	Now choose the folder into which you wish to restore to from the list on the right.  In most cases this will be a volume name and can be chosen by clicking on the 'Volume' button.
+
+	If you are going to restore files into a temporary folder so that you can compare them before overwriting you can create a new folder by typing it's name (the default is 'Untitled') into the edit text box towards the lower left hand side of the window and clicking on the 'New Folder' button.
+
+	Once the source and destination have been chosen click on the 'Select Files' button (and insert a 'File List' disk if neccessary).  This will bring up a dialog box similar to the one which was used to select the files to be backed up.  There is however one additional button now present, the 'Mark' button (which will be explained at the end of this section).
+
+	Upon entry to the select files window all files/folders will be selected.  If you are doing a complete restoration then simply click the 'Ok' button and continue.  If you wish to restore only a few files/folders then deselect the files/folders which you do not wish to restore and then click the 'Ok' button.
+
+	Ensure that the destination is still correctly set and then click the 'Restore' button.  Insert your backup disks as required until the restoration is complete.
+
+The Mark Button
+
+	The 'Mark' button will mark a file to be restored but not include the folders in which it is located when it is restored.  For example if the file you wish to restore a file which is on the backup set as SYS:APPLEWORKS.FILES:MY.EARNINGS and you wish to restore it to the volume called ACT in a folder called RESTORED.FILES then you would follow these steps :
+
+1.	In the restore window select the source and destination for the restoration.
+2.	Use the 'Create Folder' button (if necessary) to create a folder on the ACT volume and then double click on it to enter into that folder.
+3.	Click on the 'Select Files' button and insert a 'File List' disk if required.
+4.	Highlight the file MY.EARNINGS in the appropriate folder within the backup set and click on the 'Mark' button.
+5.	Click the 'Ok' button.
+6.	Ensure that the destination is still set to the correct folder.
+7.	Click on the 'Restore' button and insert disk as required.
+
+	By using the 'Mark' button a file from several folders down in a backup set can be placed into any folder without creating the folder structure beneath it.
+
+Cataloging a Backup
+
+	Should you forget what files are contained in a backup set you can use the 'Catalog Saveset' option to view a backups contents from a 'File List' disk.
+
+	Start by selecting the 'Catalog Saveset' option from the 'File' menu.  You will be presented with a dialog window asking where to read the catalog from.
+
+	From this window you can choose to read a catalog from a removable media device (such as a 3.5" or 5.25" disk drive) or a backup file stored on another hard-drive or file server.
+
+	Once you have selected the option required by clicking on it, click on the 'Ok' button.  EZBackup will then read the catalog from the file or disk and display it in a window very much like the backup or restore file selection windows.
+
+	From this window you can get information about any of the files in the backup set.
+
+	For information about moving around the folders in the backup set see the 'File Navigation in the File Selection Window' section.
+
+File Navigation in the File Selection Window
+
+	To view the contents of a folder simply highlight it in the folders list (the one on the left).  If you want to look inside a folder inside a folder then double click on the folder and any folders within it will be displayed in the folders window.  Files within these folders can then be displayed by highlighting the appropriate folder.  You can navigate down as many levels as there are in the backup by this method.
+
+	To return up a level click and hold the mouse button down in the folder name at the top of the folders list.  This will cause a list of the folders that you have gone into to pop up.  Keep holding the mouse button down and move the mouse pointer to the folder (or the volume name) which you wish to move to.
+	This may sound confusing but it is really quite simple, try it yourself.
+
+Preferences
+
+	EZBackup can perform different options at different times during a backup or restore operation.  To make life easier and gennerally more hassle free EZBackup has a 'Preferences' option available from the 'File' menu. 
+
+It is important to note that the preferences are kept in the resource fork of the application.  This means that if the file has been write protected in any way, EZBackup will fail to write any changes to it's preferences.
+
+Backup Preferences
+
+Verify disks
+	Allows disks to be verified during the backup.  Using this option will slow down a backup by approximately 30 %.
+
+Delete partial backup files
+	If you cancel a backup to a file then the partially completed backup file will be deleted automatically when this option is enabled.
+
+Restore Preferences
+
+Overwrite old files only
+	This selection will only replace a file if the last modification date on the file in the backup set is later (and not the same) than the date on the file on the disk being restored to.
+
+Ask before overwriting
+	If any file already exists on the disk being restored to then EZBackup will ask before attempting to overwrite it.
+
+Overwrite all files
+	All files are overwritten regardless of modification date.
+
+Compress upon restoration
+	This option disables the 'Overwrite old files only' and 'Ask before overwriting' options as when it is enabled all files/folders are created before the restoration begins.  This allows all the directory structure to be at the front of the disk and this makes the disk (slightly) faster in general operation.
+
+	As the 'Compress upon restoration' option will create all files on the disk BEFORE the restoration begins any files which are not restored for any reason (retore cancelled, disk error etc) will still be on the disk although unuseable.
+
+Miscellaneous Options
+
+I can see Red On Green
+This option has been added in an attempt to help those users of EZBackup that are unable to distinguish Red on Green.  By default, when backing up or restoring, the thermometer shows green for the first pass of the operation, and red for the second.  By de-selecting this option, the colour yellow is used instead of red.
+
+Exit Options
+
+	At the bottom of the window are three buttons 'Save', Ok' and 'Cancel.  The 'Save' button will save the current preferences for automatic use next time EZBackup is launched.  The 'Ok' button will keep the preferences for this session of EZBackup only (they will be as they were before changes were made next time EZBackup is launched).  The 'Cancel' button will exit without making any changes to the preferences.
+
+Initialising Disks
+
+	As an added feature EZBackup has an option which allows you to initialise disks prior to actually doing a backup (although EZBackup will automatically initialise a disk before writting to it during the backup operation).  Initialising disks before you back up can save time during the backup.
+
+	To format a disk you must select the 'Initialise/Erase' option from the 'Special' menu.  Once selected you will be presented with a list of devices which may be initialised or erased.
+	Initialising will take longer than erasing.  If the disk has some bad blocks on it then initialising it may fix the problem and could therefore be tried, otherwise erasing is a much faster alternative.
+
+	Select the device to be Initialised (or erased), select the 'Initialise Volume' or 'Erase Volume' radio button (only one may be active at once), enter a volume name (if required) and click on the 'Ok' button.
+
+	To exit without altering any disk devices click on the 'Cancel' button.
+
+Glossary
+
+Backup
+To create an image of a hard-drive onto removable media for archival purposes
+
+Button
+A (usually oval shaped) object on the screen which highlights when clicked on with a mouse
+
+Catalog
+A list of files and folders on a disk
+
+Checkbox
+A square box which when clicked on toggles an X within the box.  A checkbox acts as a switch - it is turned on when the X is visible
+
+Device
+A GS/OS file storage peripheral is a GS/OS device
+
+Erase
+To delete or remove all files
+
+File
+A single program or data segment
+
+Folder
+Files are grouped in folders. A folder is sometimes called a directory
+
+Full backup
+To backup all files on a hard-drive
+
+Incremental backup
+To backup only files which have changed since the last backup
+
+Initialise disk
+Initialising a disk makes it ready to receive data
+
+Launch
+To run a program
+
+Preferences
+Options which may be set and remembered for the next time a program is run
+
+Radio button
+Small circular buttons. Only one radio button in any group can be highlighted at any time
+
+Restore
+To return the files and folders from the backup to the original disk
+
+Saveset
+A collection of backup disks (or a backup file) is a saveset
+
+Specifications and Limitatiions
+
+EZBackup will work with any GS/OS compatible device.  Any limitations which are apparent in EZBackup are a result of the particular system configuration on which it is being run.
+
+The limitations of the current version of EZBackup are :-
+
+1.	If you are doing a backup to 5.25" disks then the maximum number of files which can be backed up is approx 1000.  This is due to the limit placed by the amount of information which can be stored on the 'file list' disk.
+
+2.	If you are doing a backup to 3.5" disks then the maximum number of files which can be backed up is approx 6200.  This is due to the limit placed by the amount of information which can be stored on the 'file list' disk.
+
+3.	On a standard 1.25 megabyte Apple //gs the greatest number of files from any one volume which may be backed up is approximately 2500.  This is because EZBAckup requires 128 bytes for storage of each file in the saveset and at the 2500 file point all available memory is in use.  This limit can be increased by removing desk accessories and unnecessary device drivers.
+
+4.	EZBackup does not currently backup the comments attatched to files found on a Macintosh based file server.  This will be supported in a future version of EZBackup if demand is sufficient (EDIT, which also never happened).
+
+For any extra information or alterations to this manual please contact EZ-Soft.
