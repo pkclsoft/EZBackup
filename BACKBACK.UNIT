@@ -26,6 +26,14 @@ var
     CBPort              :   grafPortPtr;
     CBPercent           :   real;
 
+    volumeList          : devMemberList;
+    numOfVolumes        : integer;
+    deviceList          : devMemberList;
+    numOfDevices        : integer;
+
+    currentVolume       : GSOSOutString;
+    currentMember       : integer;
+
 Procedure RefreshBackupParms;
 begin
     SetForeColor(0);
@@ -65,25 +73,13 @@ var
     NewControl2Junk     : ctlRecHndl;
     ValidJunk           : Boolean;
 
-    currentVolume       : GSOSOutString;
-    currentMember       : integer;
-
     volumeChanged       : boolean;
 
-    volumeList          : devMemberList;
-    numOfVolumes        : integer;
-    deviceList          : devMemberList;
-    numOfDevices        : integer;
-
-    Msg                 : packed array [1..150] of char;
     Junk                : Integer;
 
     Procedure SetVolumeName;
     var
         DeviceNum           : Integer;
-        VolumeParms         : volumeOSDCB;
-        DeviceName          : GSOSInString;
-        VolumeName          : GSOSOutString;
         SelectedMember      : integer;
     begin
         SelectedMember := EZNextMember(0, volumeListItem);
@@ -111,7 +107,6 @@ var
 
     Procedure SelectOutputDevice;
     var
-        DeviceName      :   GSOSOutString;
         Count           :   Integer;
         SelectedMember  :   Integer;
     begin
@@ -197,16 +192,12 @@ var
 
     Procedure CheckIfOkToStart;
     var
-        Msg     : packed array [1..150] of char;
         Junk    : Integer;
     begin
         If (BackupHeader.NumOfFiles = 0)
         then
             begin
-                Msg := concat('62:You must select at least one file/folder ',
-                              'before the backup can commence.:^#6:#1');
-
-                If AlertWindow(0,Nil,@Msg) = 0 then
+                If AlertWindow(0, Nil, @'62:You must select at least one file/folder before the backup can commence.:^#6:#1') = 0 then
                     HandleFileSelection(included);
 
                 itemHit := 0;
@@ -464,12 +455,12 @@ begin
             If (SavesetLocation.DestType = 1) then
             begin
                 If (SavesetLocation.DeviceType = AppletalkFileServer) then
-                begin
-                    Msg := concat('64:Note that you are unable to write directly ',
-                                  'to a file server, so the Saveset will be placed ',
-                                  'in a folder on the file server.:^#6');
-    
-                    Junk := AlertWindow(0,Nil,@Msg);
+                begin    
+                    Junk := 
+                        AlertWindow
+                            (0,
+                             Nil,
+                             @'64:Note that you are unable to write directly to a file server, so the Saveset will be placed in a folder on the file server.:^#6');
                 end;
 
                 UserAbort := not SelectDestinationFile;

@@ -26,11 +26,16 @@ implementation
 Const
 {$ copy 'BackTConst.Inc' }
 
+Var
+    origString          :   pString;
+    fixedString         :   pString;
+    ErrText             :   textBlock;
+    tmpCString          :   packed array [1..508] of char;
+    theDirEntryName     :   FilenameString;
+
 Procedure RefreshMsgBox;
 var
     tmpRect     :   rect;
-    origString  :   pString;
-    fixedString :   pString;
 begin
     moveTo(10,14);
     DrawString(@'Getting file list, please wait ...');
@@ -47,7 +52,7 @@ begin
 
     SetSolidPenPat(15);
     PaintRect(tmpRect);
-
+    
     origString := copy(refreshPathName.theString, 1, refreshPathName.size);
 
     EZFixStringToRect(tmpRect, origString, fixedString, addToStart);
@@ -56,13 +61,107 @@ begin
     DrawString(@fixedString);
 end;
 
+Function FileWanted(inDirEntry: dirEntryOSDCB; Increm: Boolean) : Boolean;
+begin
+    With inDirEntry do
+    begin
+        If fileType = BadBlocksfile
+        then
+            FileWanted := False
+        else
+            If not Increm
+            then
+                FileWanted := True
+            else
+                If ((access & backupNeededMask) <> 0) or
+                   (fileType = DirectoryFile)
+                then
+                    FileWanted := True
+                else
+                    FileWanted := False;
+    end;
+end;
+
+Function GetDirEntry(var result:           dirEntryOSDCB; 
+                     var theDirEntryName:  FilenameString;
+                         Increm:           boolean;
+                         forFileRefNum:    integer) : Integer;
+var
+    localError          :   Integer;
+    
+    oListLengthPtr      :   IntegerPtr;
+    theOptionListLength :   integer;
+
+    EmptyOptionList     :   EmptyOptionListType;
+    TrueOptionList      :   ptr;
+begin
+    with EmptyOptionList do
+    begin
+        inputLength := $0004;
+        outputLength := $0000;
+    end;
+     
+    theDirEntryName.maxSize := FileNameLength + 4;
+    theDirEntryName.theString.size := 0;
+    theDirEntryName.theString.theString := '';
+
+    With result do
+    begin
+        pcount := 17;
+        refNum := forFileRefNum;
+        base := gdeBaseAddDisplacement;
+        displacement := 1;
+        name := @theDirEntryName;
+        optionList := @EmptyOptionList;
+    end;
+
+    GetDirEntryGS(result);
+    localError := ToolError;
+
+    { If the file system is something other than ProDOS, and the file }
+    { has an option list, then get the option list.                   }
+
+    If (localError = $4f)
+    then
+        with result do
+        begin
+            If (fileSysID <> fsProDOS) and FileWanted(result, Increm)
+            then
+                begin
+                    theOptionListLength := EmptyOptionList.outputLength + 4;
+                    TrueOptionList := EZNew(theOptionListLength);
+                    oListLengthPtr := integerPtr(TrueOptionList);
+                    oListLengthPtr^ := theOptionListLength;
+                    optionList := Pointer(TrueOptionList);
+                end
+            else
+                begin
+                    optionList := Nil;
+                end;
+
+            { Ensure that we retrieve the same directory entry again. }
+            { Note that we don't do this for Appleshare, due to some  }
+            { bug in the FST.                                         }
+            If (fileSysID <> fsAppleShare) then
+                displacement := 0;
+
+            GetDirEntryGS(result);
+            localError := ToolError;
+        end
+    else
+        begin
+            result.optionList := Nil;
+        end;
+        
+    GetDirEntry := localError;
+end;
+
 Function GetFileList;
 var
     Junk        : FileRecPtr;
     tmpRect     : rect;
     MsgBox      : grafPortPtr;
     ErrorCode   : Integer;
-    ErrText     : textBlock;
     AlertJunk   : Integer;
     CloseParams : closeOSDCB;
     entryNumber : integer;
@@ -76,18 +175,16 @@ var
                             Increm     : Boolean;
                             Parent     : FileRecPtr;
                         var startEntry : FileRecPtr) : FileRecPtr;
-    var
+
+    var            
         OpenParams          :   openOSDCB;
 
         theDirEntry         :   dirEntryOSDCB;
-        theOptionListLength :   integer;
 
-        theDirEntryName     :   FilenameString;
         nextDirName         :   GSOSInString;
-        tmpCString          :   packed array [1..508] of char;
 
-        EmptyOptionList     :   EmptyOptionListType;
-
+        optionListLenPtr    :   IntegerPtr;
+        
         curEntry            :   FileRecPtr;
         nextEntry           :   FileRecPtr;
         savedEntry          :   FileRecPtr;
@@ -96,97 +193,8 @@ var
 
         ErrCode             :   integer;
 
-        Msg                 :   textBlock;
         Junk                :   Integer;
 
-        Function FileWanted : Boolean;
-        begin
-            With theDirEntry do
-            begin
-                If fileType = BadBlocksfile
-                then
-                    FileWanted := False
-                else
-                    If not Increm
-                    then
-                        FileWanted := True
-                    else
-                        If ((access & backupNeededMask) <> 0) or
-                           (fileType = DirectoryFile)
-                        then
-                            FileWanted := True
-                        else
-                            FileWanted := False;
-            end;
-        end;
-
-        Procedure GetDirEntry;
-        var
-            oListLengthPtr  :   IntegerPtr;
-
-            TrueOptionList      : ptr;
-        begin
-            with EmptyOptionList do
-            begin
-                inputLength := $0004;
-                outputLength := $0000;
-            end;
- 
-            With theDirEntry do
-            begin
-                pcount := 17;
-                refNum := OpenParams.refNum;
-                base := gdeBaseAddDisplacement;
-                displacement := 1;
-                name := @theDirEntryName;
-                optionList := @EmptyOptionList;
-            end;
-
-            theDirEntryName.maxSize := FileNameLength + 4;
-            theDirEntryName.theString.size := 0;
-            theDirEntryName.theString.theString := '';
-     
-            GetDirEntryGS(theDirEntry);
-            ErrCode := ToolError;
- 
-            { If the file system is something other than ProDOS, and the file }
-            { has an option list, then get the option list.                   }
- 
-            If (ErrCode = $4f)
-            then
-                with theDirEntry do
-                begin
-                    If (fileSysID <> fsProDOS) and FileWanted
-                    then
-                        begin
-                            theOptionListLength := EmptyOptionList.outputLength + 4;
-                            TrueOptionList := EZNew(theOptionListLength);
-                            oListLengthPtr := integerPtr(TrueOptionList);
-                            oListLengthPtr^ := theOptionListLength;
-                            optionList := Pointer(TrueOptionList);
-                        end
-                    else
-                        begin
-                            theOptionListLength := 0;
-                            optionList := Nil;
-                        end;
- 
-                    { Ensure that we retrieve the same directory entry again. }
-                    { Note that we don't do this for Appleshare, due to some  }
-                    { bug in the FST.                                         }
-                    If (fileSysID <> fsAppleShare) then
-                        displacement := 0;
- 
-                    GetDirEntryGS(theDirEntry);
-                    ErrCode := ToolError;
-                end
-            else
-                begin
-                    theDirEntry.optionList := Nil;
-                    theOptionListLength := 0;
-                end;
-        end;
-                
     begin
         ErrCode := ErrorCode;
 
@@ -208,9 +216,9 @@ var
         While (ErrCode = 0) and
               (not UserAbort) do
         begin
-            GetDirEntry;
+            ErrCode := GetDirEntry(theDirEntry, theDirEntryName, Increm, OpenParams.refNum);
 
-            If FileWanted   and
+            If FileWanted(theDirEntry, Increm)   and
                (ErrCode = 0) then
             begin
                 With BackupHeader do
@@ -221,10 +229,10 @@ var
 
                     If offset >= ListBufferSize then
                     begin
-                        Msg := concat('42:There is not enough memory available to contain ',
+                        ErrText := concat('42:There is not enough memory available to contain ',
                                       'the file list.:^#0');
 
-                        Junk := AlertWindow(0,Nil,@Msg);
+                        Junk := AlertWindow(0,Nil,@ErrText);
 
                         UserAbort := True;
                     end;
@@ -253,9 +261,18 @@ var
                         NextFile := Nil;
                         DirEntry := theDirEntry;
                         ParentDir := Parent;
+                        
                         FileName := theDirEntryName;
+                        theDirEntry.name := @FileName;
+                        
                         Selected := selectFile;
-                        OptionListLength := theOptionListLength;
+                        
+                        if DirEntry.optionList <> Nil then begin
+                            optionListLenPtr := pointer(DirEntry.optionList);
+                            OptionListLength := optionListLenPtr^;                            
+                        end else begin
+                            OptionListLength := 0;
+                        end;
 
                         If DirEntry.fileType = DirectoryFile then
                         begin

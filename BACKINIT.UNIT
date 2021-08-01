@@ -25,18 +25,10 @@ implementation
 Const
 {$ copy 'BackTConst.Inc' }
 
-Procedure BETAMessage;
-var
-    Msg  : packed array [1..300] of char;
-    Junk : Integer;
-begin
-    Msg := concat('73:Please note that this is a BETA version of the software, ',
-                  'and that it is supplied as a demonstration only, and as ',
-                  'such, it should NOT be distributed without prior permission ',
-                  'of the author.:^#0');
-    Junk := AlertWindow(0,Nil,@Msg);
-end;
- 
+Var
+    ApplicationName         :   GSOSOutString;
+
+
 Procedure StartMenus;
 { Will initialise all of the menus to appear in the menu bar. }
 var
@@ -108,7 +100,6 @@ end;
 
 Procedure openMyResourceFile;
 var
-    ApplicationName         :   GSOSOutString;
     getNameParms            :   getNameOSDCB;
     myResourceFile          :   integer;
     mapAddress              :   ^resHeaderRec;
@@ -149,9 +140,6 @@ end;
 Procedure StartUp;
 { Start up everything we need for the program to run. }
 var
-    Msg             :   textBlock;
-    AlertJunk       :   integer;
-
     major           :   longint;
     minor           :   longint;
     prototype       :   boolean;

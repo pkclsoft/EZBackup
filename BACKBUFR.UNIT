@@ -27,6 +27,9 @@ implementation
 
 {$ Segment 'LowLevel' }
 
+var
+    AlertMsg             :   textBlock;
+
 Procedure WriteDestination;
 { Will write the current contents of the Work Area to the destination, be it  }
 { a file or a disk.  If during the write, the destination runs out of room,   }
@@ -136,7 +139,6 @@ var
     const
         MaxWriteSize    =   65536;
     var
-        Msg             :   textBlock;
         xferCount       :   longint;
         byteCount       :   longint;
         offset          :   longint;
@@ -178,9 +180,8 @@ var
 
             If ToolError <> 0 then
             begin
-                Msg := 'Error when writing to Saveset file.';
- 
-                UserAbort := ProdosError(ToolError, Msg, True);
+                AlertMsg := 'Error when writing to Saveset file.';
+                UserAbort := ProdosError(ToolError, AlertMsg, True);
             end;
         end;
     end;
@@ -241,7 +242,6 @@ Procedure FlushBuffer;
 { the destination via a call to WriteDestination.                           }
 var
     Count   : LongInt;
-    Msg     : textBlock;
     Junk    : Integer;
 begin
     Count := (ByteIndex div ord4(BlockByteCount)) * ord4(BlockByteCount);
@@ -253,11 +253,10 @@ begin
         If CopyToBuffer(Nil, Count - ByteIndex) <> 0
         then
             begin
-                Msg := concat('62:A program error has occurred (Error code $0001), ',
-                              'please contact Powerup Technology as soon as ',
-                              'possible.:^#0');
-
-                Junk := AlertWindow(0,Nil,@Msg);
+                Junk := 
+                    AlertWindow(0,
+                                Nil,
+                                @'62:A program error has occurred (Error code $0001), please contact Powerup Technology as soon as possible.:^#0');
                 UserAbort := True;
             end
         else
@@ -279,10 +278,8 @@ Procedure ReadBackup;
     { Will read the specified number of blocks from the disk into WorkArea }
     var
         ReadParams      :   devReadWriteOSDCB;
-        Msg             :   textBlock;
         spaceLeft       :   longint;
         errCode         :   integer;
-        tmpString       :   pString;
         xferCount       :   longint;
         offset          :   longint;
         byteCount       :   longint;
@@ -321,7 +318,7 @@ Procedure ReadBackup;
                             errCode := 0;
 
                             with currentEntry^.FileName do
-                                Msg := concat('74',chr(1),
+                                AlertMsg := concat('74',chr(1),
                                               'An I/O error has occured on the ',
                                               'Backup disk whilst extracting the ',
                                               'file "',copy(theString.theString,1,theString.size),'".  ',
@@ -329,7 +326,7 @@ Procedure ReadBackup;
                                               'the restoration ?',chr(1),'^#6',
                                               chr(1),'#1');
  
-                            If AlertWindow(0,Nil,@Msg) = 1 then
+                            If AlertWindow(0, Nil, @AlertMsg) = 1 then
                                 UserAbort := True;
  
                             If not UserAbort then
@@ -393,17 +390,15 @@ Procedure ReadBackup;
 
         If (errCode <> 0) then
         begin
-            Msg := concat('Read error while attempting ',
+            AlertMsg := concat('Read error while attempting ',
                           'to read from the saveset.');
      
-            UserAbort := ProdosError(ToolError, Msg, True);
+            UserAbort := ProdosError(ToolError, AlertMsg, True);
         end;
     end;
  
     Procedure ReadFromFile;
     { Will read the specified number of virtual blocks from the file.      }
-    var
-        Msg         :   textBlock;
     begin
         With WriteFileParams do
         begin
@@ -417,11 +412,11 @@ Procedure ReadBackup;
  
         If ToolError <> 0 then
         begin
-            Msg := concat('Read error while attempting ',
+            AlertMsg := concat('Read error while attempting ',
                           'to read from the backup file. ',
                           'Aborting Restoration.');
  
-            UserAbort := ProdosError(ToolError, Msg, False);
+            UserAbort := ProdosError(ToolError, AlertMsg, False);
         end;
     end;
 

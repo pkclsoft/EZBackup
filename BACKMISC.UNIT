@@ -79,7 +79,7 @@ begin
                 If optionListHandle <> Nil then
                     DisposeHandle(optionListHandle);
             end;
- 
+            
         currentEntry := nextEntry;
     end;
 
